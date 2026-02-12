@@ -8,3 +8,4 @@ class_name WeaponEntry
 @export var projectile_count := 1
 @export var spread_degrees := 0.0
 @export var hit_radius := 18.0
+@export var damage := 20.0

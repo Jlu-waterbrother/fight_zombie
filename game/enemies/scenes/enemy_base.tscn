@@ -1,10 +1,27 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://y8pevywye1tu"]
 
-[ext_resource type="Script" path="res://game/enemies/scripts/enemy_base.gd" id="1"]
+[ext_resource type="Script" uid="uid://dwlykl5y68vox" path="res://game/enemies/scripts/enemy_base.gd" id="1"]
+[ext_resource type="Script" uid="uid://ibxndapr141d" path="res://core/components/health_component.gd" id="2"]
 
-[node name="EnemyBase" type="CharacterBody2D"]
+[node name="EnemyBase" type="CharacterBody2D" unique_id=520375079]
 script = ExtResource("1")
 
-[node name="Visual" type="Polygon2D" parent="."]
+[node name="Visual" type="Polygon2D" parent="." unique_id=996497327]
 color = Color(0.4, 0.9, 0.3, 1)
 polygon = PackedVector2Array(-14, -14, 14, -14, 14, 14, -14, 14)
+
+[node name="HealthComponent" type="Node" parent="." unique_id=1416305373]
+script = ExtResource("2")
+max_health = 60.0
+
+[node name="HealthBar" type="ProgressBar" parent="." unique_id=1255542442]
+visible = false
+offset_left = -18.0
+offset_top = -30.0
+offset_right = 18.0
+offset_bottom = -22.0
+max_value = 60.0
+value = 60.0
+show_percentage = false
+
+[node name="DamageLayer" type="Node2D" parent="." unique_id=1458085350]

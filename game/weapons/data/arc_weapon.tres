@@ -1,6 +1,6 @@
-[gd_resource type="Resource" script_class="WeaponEntry" load_steps=2 format=3]
+[gd_resource type="Resource" script_class="WeaponEntry" format=3 uid="uid://d3ainwpvt6cks"]
 
-[ext_resource type="Script" path="res://game/weapons/scripts/weapon_entry.gd" id="1"]
+[ext_resource type="Script" uid="uid://ctnq7m35hy3mx" path="res://game/weapons/scripts/weapon_entry.gd" id="1"]
 
 [resource]
 script = ExtResource("1")
@@ -11,3 +11,4 @@ fire_interval_min = 0.2
 projectile_count = 3
 spread_degrees = 8.0
 hit_radius = 12.0
+damage = 10.0

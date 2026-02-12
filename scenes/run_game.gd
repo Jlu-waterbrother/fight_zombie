@@ -17,6 +17,8 @@ const UPGRADE_HIT_RADIUS := 3
 @export var total_waves := 3
 @export var enemies_per_wave_base := 8
 @export var enemies_per_wave_growth := 4
+@export var enemy_base_max_health := 60.0
+@export var enemy_health_growth_per_wave := 0.15
 @export var inter_wave_delay := 1.8
 @export var max_equipped_weapons := 3
 @export var weapon_entries: Array[WeaponEntry] = []
@@ -206,6 +208,7 @@ func _init_weapon_pool() -> void:
 			"projectile_count": max(1, int(entry.projectile_count)),
 			"spread_degrees": float(entry.spread_degrees),
 			"hit_radius": float(entry.hit_radius),
+			"damage": float(entry.damage),
 		}
 		_weapon_pool[weapon.id] = weapon
 		_weapon_order.append(weapon.id)
@@ -221,13 +224,18 @@ func _unlock_weapon(weapon_id: String) -> void:
 
 func _spawn_enemy() -> void:
 	var enemy := ENEMY_SCENE.instantiate() as EnemyBase
+	var wave_health_multiplier := 1.0 + float(max(_current_wave_index - 1, 0)) * enemy_health_growth_per_wave
+	var enemy_max_health := enemy_base_max_health * wave_health_multiplier
+
 	enemy.attack_line_y = player.global_position.y
 	enemy.attack_damage = enemy_contact_damage
 	enemy.attack_tick.connect(_on_enemy_attack_tick)
+	enemy.defeated.connect(_on_enemy_defeated)
 
 	var viewport_size := get_viewport_rect().size
 	enemy.global_position = Vector2(randf_range(40.0, viewport_size.x - 40.0), -32.0)
 	enemy_container.add_child(enemy)
+	enemy.configure_for_run(player.global_position.y, enemy_contact_damage, enemy_max_health)
 
 func _tick_weapon(delta: float, weapon_id: String) -> void:
 	if not _weapon_pool.has(weapon_id):
@@ -260,22 +268,26 @@ func _fire_weapon(weapon: Dictionary) -> void:
 	var projectile_count := int(weapon.projectile_count)
 	var spread_degrees := float(weapon.spread_degrees)
 	var hit_radius := float(weapon.hit_radius)
+	var damage := float(weapon.damage)
 
 	if projectile_count <= 1:
-		_spawn_projectile(base_direction, hit_radius)
+		_spawn_projectile(base_direction, hit_radius, damage, nearest_enemy, String(weapon.id))
 		return
 
 	var center_index := float(projectile_count - 1) * 0.5
 	for i in projectile_count:
 		var angle_deg := (float(i) - center_index) * spread_degrees
 		var direction := base_direction.rotated(deg_to_rad(angle_deg))
-		_spawn_projectile(direction, hit_radius)
+		_spawn_projectile(direction, hit_radius, damage, nearest_enemy, String(weapon.id))
 
-func _spawn_projectile(direction: Vector2, hit_radius: float) -> void:
+func _spawn_projectile(direction: Vector2, hit_radius: float, damage: float, target_enemy: EnemyBase, weapon_id: String) -> void:
 	var bullet := BULLET_SCENE.instantiate() as ProjectileRuntime
 	bullet.global_position = player.global_position
 	bullet.direction = direction.normalized()
+	bullet.target_enemy = target_enemy
 	bullet.set_meta("hit_radius", hit_radius)
+	bullet.set_meta("damage", damage)
+	bullet.set_meta("weapon_id", weapon_id)
 	bullet_container.add_child(bullet)
 
 func _update_projectile_state() -> void:
@@ -292,10 +304,19 @@ func _update_projectile_state() -> void:
 		var hit_radius := float(bullet.get_meta("hit_radius", 18.0))
 		var hit_enemy := _find_hit_enemy(bullet.global_position, hit_radius)
 		if hit_enemy != null:
-			hit_enemy.queue_free()
+			var damage := float(bullet.get_meta("damage", 1.0))
+			var source_weapon_id := StringName(String(bullet.get_meta("weapon_id", "")))
+			hit_enemy.apply_weapon_hit(damage, &"projectile", source_weapon_id)
 			bullet.queue_free()
-			_kill_count += 1
-			_gain_experience(exp_per_kill)
+
+func _on_enemy_defeated(enemy: EnemyBase) -> void:
+	if enemy == null:
+		return
+	if not is_instance_valid(enemy):
+		return
+	_kill_count += 1
+	_gain_experience(exp_per_kill)
+	enemy.queue_free()
 
 func _find_hit_enemy(point: Vector2, hit_radius: float) -> EnemyBase:
 	for child in enemy_container.get_children():
@@ -334,6 +355,8 @@ func _on_player_died() -> void:
 		child.queue_free()
 	fail_panel.visible = true
 	victory_panel.visible = false
+	_is_upgrade_open = false
+	GameState.is_paused = false
 	upgrade_panel.visible = false
 
 func _finish_victory() -> void:
@@ -349,6 +372,8 @@ func _finish_victory() -> void:
 		child.queue_free()
 	victory_panel.visible = true
 	fail_panel.visible = false
+	_is_upgrade_open = false
+	GameState.is_paused = false
 	upgrade_panel.visible = false
 	var best_time_text := "%.1f" % GameState.best_time_seconds
 	if GameState.best_time_seconds >= 999998.0:
@@ -390,6 +415,7 @@ func _try_open_upgrade_panel() -> void:
 	if _pending_level_ups <= 0:
 		return
 	_is_upgrade_open = true
+	GameState.is_paused = true
 	upgrade_panel.visible = true
 	_refresh_upgrade_options()
 
@@ -466,9 +492,11 @@ func _select_weapon_for_upgrade(upgrade_type: int) -> String:
 func _close_upgrade_panel() -> void:
 	_pending_level_ups = max(0, _pending_level_ups - 1)
 	if _pending_level_ups > 0:
+		GameState.is_paused = true
 		upgrade_panel.visible = true
 		return
 	_is_upgrade_open = false
+	GameState.is_paused = false
 	upgrade_panel.visible = false
 
 func _on_pick_option_a_upgrade() -> void:
