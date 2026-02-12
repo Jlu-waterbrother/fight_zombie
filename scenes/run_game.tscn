@@ -73,6 +73,9 @@ horizontal_alignment = 1
 [node name="RestartButton" type="Button" parent="UILayer/FailPanel/VBoxContainer"]
 text = "重新开始"
 
+[node name="BackToMenuButton" type="Button" parent="UILayer/FailPanel/VBoxContainer"]
+text = "返回主菜单"
+
 [node name="VictoryPanel" type="PanelContainer" parent="UILayer"]
 visible = false
 offset_left = 250.0
@@ -91,6 +94,9 @@ text = "通关波次: 0\n击杀: 0\n等级: 1\n用时: 0.0 秒"
 
 [node name="VictoryRestartButton" type="Button" parent="UILayer/VictoryPanel/VBoxContainer"]
 text = "重新开始"
+
+[node name="VictoryBackToMenuButton" type="Button" parent="UILayer/VictoryPanel/VBoxContainer"]
+text = "返回主菜单"
 
 [node name="UpgradePanel" type="PanelContainer" parent="UILayer"]
 visible = false

@@ -23,6 +23,14 @@ EventBus="*res://autoload/event_bus.gd"
 ConfigService="*res://autoload/config_service.gd"
 AudioService="*res://autoload/audio_service.gd"
 
+[display]
+
+window/size/viewport_width=720
+window/size/viewport_height=1280
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=1
+
 [physics]
 
 3d/physics_engine="Jolt Physics"

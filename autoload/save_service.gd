@@ -60,6 +60,19 @@ func load_progression() -> Dictionary:
 	var progression: Dictionary = data.get("progression", {})
 	return progression.duplicate(true)
 
+func save_settings(settings: Dictionary) -> int:
+	var data := load_data()
+	data["settings"] = settings.duplicate(true)
+	return save_data(data)
+
+func load_settings() -> Dictionary:
+	var data := load_data()
+	var settings: Dictionary = data.get("settings", {})
+	return settings.duplicate(true)
+
+func clear_save() -> int:
+	return save_data({})
+
 func _default_data() -> Dictionary:
 	return {
 		"meta": {
@@ -77,5 +90,11 @@ func _default_data() -> Dictionary:
 			"best_level": 1,
 			"best_wave": 1,
 			"best_time_seconds": 999999.0,
+		},
+		"settings": {
+			"difficulty_key": "normal",
+			"wave_count_multiplier": 1.0,
+			"enemy_count_multiplier": 1.0,
+			"spawn_interval_multiplier": 1.0,
 		},
 	}

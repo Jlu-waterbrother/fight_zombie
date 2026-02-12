@@ -38,9 +38,11 @@ const UPGRADE_HIT_RADIUS := 3
 @onready var weapon_label: Label = $UILayer/WeaponLabel
 @onready var fail_panel: PanelContainer = $UILayer/FailPanel
 @onready var restart_button: Button = $UILayer/FailPanel/VBoxContainer/RestartButton
+@onready var back_to_menu_button: Button = $UILayer/FailPanel/VBoxContainer/BackToMenuButton
 @onready var victory_panel: PanelContainer = $UILayer/VictoryPanel
 @onready var victory_desc_label: Label = $UILayer/VictoryPanel/VBoxContainer/VictoryDescLabel
 @onready var victory_restart_button: Button = $UILayer/VictoryPanel/VBoxContainer/VictoryRestartButton
+@onready var victory_back_to_menu_button: Button = $UILayer/VictoryPanel/VBoxContainer/VictoryBackToMenuButton
 @onready var upgrade_panel: PanelContainer = $UILayer/UpgradePanel
 @onready var fire_rate_button: Button = $UILayer/UpgradePanel/VBoxContainer/FireRateButton
 @onready var hit_radius_button: Button = $UILayer/UpgradePanel/VBoxContainer/HitRadiusButton
@@ -65,6 +67,10 @@ var _current_wave_spawn_remaining := 0
 var _is_between_waves := false
 var _run_elapsed_seconds := 0.0
 var _reward_settlement := RewardSettlement.new()
+var _effective_total_waves := 3
+var _effective_enemy_spawn_interval := 1.2
+var _effective_enemies_per_wave_base := 8
+var _effective_enemies_per_wave_growth := 4
 
 func _ready() -> void:
 	GameState.load_persistent_state()
@@ -74,10 +80,13 @@ func _ready() -> void:
 	var player_controller := player as PlayerController
 	player_controller.health_component.died.connect(_on_player_died)
 	restart_button.pressed.connect(_on_restart_pressed)
+	back_to_menu_button.pressed.connect(_on_back_to_menu_pressed)
 	victory_restart_button.pressed.connect(_on_restart_pressed)
+	victory_back_to_menu_button.pressed.connect(_on_back_to_menu_pressed)
 	fire_rate_button.pressed.connect(_on_pick_option_a_upgrade)
 	hit_radius_button.pressed.connect(_on_pick_option_b_upgrade)
 	_init_weapon_pool()
+	_apply_run_modifiers_from_state()
 	if not _weapon_order.is_empty():
 		_unlock_weapon(_weapon_order[0])
 
@@ -110,7 +119,6 @@ func _process(delta: float) -> void:
 	for weapon_id in _equipped_weapon_ids:
 		_tick_weapon(delta, weapon_id)
 
-	_check_enemy_contact()
 	_update_projectile_state()
 	_try_complete_wave_or_run(delta)
 	_update_health_text()
@@ -130,7 +138,7 @@ func _start_wave(wave_index: int) -> void:
 func _tick_wave_spawn(delta: float) -> void:
 	if _is_between_waves:
 		return
-	if _current_wave_index <= 0 or _current_wave_index > total_waves:
+	if _current_wave_index <= 0 or _current_wave_index > _effective_total_waves:
 		return
 	if _current_wave_spawn_remaining <= 0:
 		return
@@ -141,7 +149,7 @@ func _tick_wave_spawn(delta: float) -> void:
 
 	_spawn_enemy()
 	_current_wave_spawn_remaining -= 1
-	_spawn_cooldown = enemy_spawn_interval
+	_spawn_cooldown = _effective_enemy_spawn_interval
 
 func _try_complete_wave_or_run(delta: float) -> void:
 	if _current_wave_spawn_remaining > 0:
@@ -149,7 +157,7 @@ func _try_complete_wave_or_run(delta: float) -> void:
 	if enemy_container.get_child_count() > 0:
 		return
 
-	if _current_wave_index >= total_waves:
+	if _current_wave_index >= _effective_total_waves:
 		_finish_victory()
 		return
 
@@ -162,7 +170,17 @@ func _try_complete_wave_or_run(delta: float) -> void:
 		_start_wave(_current_wave_index + 1)
 
 func _enemy_count_for_wave(wave_index: int) -> int:
-	return max(1, enemies_per_wave_base + (wave_index - 1) * enemies_per_wave_growth)
+	return max(1, _effective_enemies_per_wave_base + (wave_index - 1) * _effective_enemies_per_wave_growth)
+
+func _apply_run_modifiers_from_state() -> void:
+	var wave_multiplier := maxf(0.5, GameState.wave_count_multiplier)
+	var enemy_multiplier := maxf(0.5, GameState.enemy_count_multiplier)
+	var spawn_multiplier := maxf(0.5, GameState.spawn_interval_multiplier)
+
+	_effective_total_waves = max(1, int(round(float(total_waves) * wave_multiplier)))
+	_effective_enemy_spawn_interval = maxf(0.1, enemy_spawn_interval * spawn_multiplier)
+	_effective_enemies_per_wave_base = max(1, int(round(float(enemies_per_wave_base) * enemy_multiplier)))
+	_effective_enemies_per_wave_growth = max(1, int(round(float(enemies_per_wave_growth) * enemy_multiplier)))
 
 func _init_weapon_pool() -> void:
 	_weapon_pool.clear()
@@ -203,7 +221,9 @@ func _unlock_weapon(weapon_id: String) -> void:
 
 func _spawn_enemy() -> void:
 	var enemy := ENEMY_SCENE.instantiate() as EnemyBase
-	enemy.target = player
+	enemy.attack_line_y = player.global_position.y
+	enemy.attack_damage = enemy_contact_damage
+	enemy.attack_tick.connect(_on_enemy_attack_tick)
 
 	var viewport_size := get_viewport_rect().size
 	enemy.global_position = Vector2(randf_range(40.0, viewport_size.x - 40.0), -32.0)
@@ -292,15 +312,13 @@ func _is_out_of_viewport(point: Vector2, viewport_size: Vector2) -> bool:
 		or point.x > viewport_size.x + projectile_despawn_margin \
 		or point.y > viewport_size.y + projectile_despawn_margin
 
-func _check_enemy_contact() -> void:
+func _on_enemy_attack_tick(damage: float) -> void:
+	if _is_run_over:
+		return
+	if _is_upgrade_open:
+		return
 	var player_controller := player as PlayerController
-	for child in enemy_container.get_children():
-		var enemy := child as EnemyBase
-		if enemy == null:
-			continue
-		if enemy.global_position.distance_to(player.global_position) <= enemy_contact_radius:
-			player_controller.apply_contact_damage(enemy_contact_damage)
-			enemy.queue_free()
+	player_controller.apply_contact_damage(damage)
 
 func _on_player_died() -> void:
 	if _is_run_over:
@@ -335,10 +353,13 @@ func _finish_victory() -> void:
 	var best_time_text := "%.1f" % GameState.best_time_seconds
 	if GameState.best_time_seconds >= 999998.0:
 		best_time_text = "--"
-	victory_desc_label.text = "通关波次: %d\n击杀: %d\n等级: %d\n用时: %.1f 秒\n本局金币: %d\n累计金币: %d\n最佳击杀: %d\n最佳等级: %d\n最佳用时: %s 秒" % [_current_wave_index, _kill_count, _current_level, _run_elapsed_seconds, reward_gold, GameState.total_gold, GameState.best_kills, GameState.best_level, best_time_text]
+	victory_desc_label.text = "难度: %s\n通关波次: %d\n击杀: %d\n等级: %d\n用时: %.1f 秒\n本局金币: %d\n累计金币: %d\n最佳击杀: %d\n最佳等级: %d\n最佳用时: %s 秒" % [GameState.difficulty_key, _current_wave_index, _kill_count, _current_level, _run_elapsed_seconds, reward_gold, GameState.total_gold, GameState.best_kills, GameState.best_level, best_time_text]
 
 func _on_restart_pressed() -> void:
 	get_tree().reload_current_scene()
+
+func _on_back_to_menu_pressed() -> void:
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
 func _update_health_text() -> void:
 	var player_controller := player as PlayerController
@@ -351,9 +372,9 @@ func _update_kill_text() -> void:
 
 func _update_wave_text() -> void:
 	if _is_run_over and not _is_failed:
-		wave_label.text = "Wave: %d/%d (胜利)" % [_current_wave_index, total_waves]
+		wave_label.text = "Wave: %d/%d (胜利)" % [_current_wave_index, _effective_total_waves]
 		return
-	wave_label.text = "Wave: %d/%d  Remaining: %d" % [_current_wave_index, total_waves, _current_wave_spawn_remaining + enemy_container.get_child_count()]
+	wave_label.text = "Wave: %d/%d  Remaining: %d" % [_current_wave_index, _effective_total_waves, _current_wave_spawn_remaining + enemy_container.get_child_count()]
 
 func _gain_experience(amount: int) -> void:
 	if amount <= 0:
