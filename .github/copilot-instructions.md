@@ -1,29 +1,36 @@
-# Copilot Instructions for This Repository
+# Project Guidelines
 
-## Project Type and Layout
-- This is a minimal Godot 4.6 project.
-- The only source-level project config is `project.godot`; there are currently no gameplay scenes/scripts committed.
-- `icon.svg` is the application icon source, and `icon.svg.import` defines its Godot import settings.
-- `.godot/` contains editor/import/shader cache artifacts and is generated state (not hand-edited source).
+## Code Style
+- Primary language is GDScript; follow typed signatures seen in `core/components/health_component.gd` and `autoload/save_service.gd`.
+- Use `snake_case` for funcs/vars, `UPPER_SNAKE_CASE` for constants, and keep functions short and single-purpose.
+- Use `class_name` for reusable domain types/components (example: `core/components/health_component.gd`, `game/ui/scripts/menu_flow.gd`).
+- Keep module boundaries clean: do not mix UI flow, combat math, and persistence inside one script.
 
-## Build, Test, and Lint Commands
-- This repository does not define project-local build, test, or lint scripts (no `Makefile`, package manager config, or test framework files are present).
-- Run the project from the repo root with Godot:
-  - `godot4 --path .`
-- Re-import assets / validate project loading in headless mode:
-  - `godot4 --headless --path . --quit`
-- Single-test command: not applicable, because no automated test suite is configured in this repository.
+## Architecture
+- `autoload/`: global services/state (`game_state.gd`, `event_bus.gd`, `save_service.gd`, `config_service.gd`, `audio_service.gd`).
+- `core/`: reusable components/systems/data/utils shared across game domains.
+- `game/`: feature domains (`combat`, `enemies`, `player`, `waves`, `loot`, `ui`, `progression`) split by `data/`, `scripts/`, `scenes/`.
+- `scenes/`: app entry and flow orchestration (`bootstrap.tscn` -> `main_menu.tscn` -> `run_game.tscn`).
+- `localization/`: CSV source + generated translation resource pipeline.
 
-## High-Level Architecture
-- Runtime behavior is driven primarily by `project.godot` settings:
-  - Application metadata (`config/name`, icon path).
-  - Rendering backend is set to `gl_compatibility` for desktop/mobile.
-  - 3D physics engine is configured to `Jolt Physics`.
-- Asset pipeline is Godot-native:
-  - Source asset (`icon.svg`) is imported to `.godot/imported/*.ctex` based on `*.import` settings.
+## Build and Test
+- Run game from repo root: `godot4 --path .`
+- Headless validation/import check: `godot4 --headless --path . --quit`
+- No project-local lint/build script is defined.
+- No automated tests are configured yet (`tests/unit/.gitkeep`, `tests/integration/.gitkeep` are placeholders).
 
-## Repository-Specific Conventions
-- Prefer editing engine settings through the Godot Editor UI; `project.godot` explicitly notes that direct manual edits are error-prone.
-- Keep generated `.godot/` artifacts out of source control (`.gitignore` already enforces this).
-- Preserve UTF-8 encoding for text files per `.editorconfig`.
-- Keep the project compatible with the configured renderer/feature set in `project.godot` (`"4.6"` + `"GL Compatibility"`).
+## Project Conventions
+- Prefer changing engine/project settings through Godot Editor UI; avoid manual edits in `project.godot` unless necessary.
+- Keep generated runtime/import artifacts ignored (`.godot/`, `.import/`, `.export/`, `*.import`, `*.imported.*`, `.mono/`) per `.gitignore`.
+- Track `.uid` files in Git (for stable resource/script IDs across machines), e.g. `game/enemies/scripts/enemy_base.gd.uid`.
+- Treat `.translation` files as generated binary assets from CSV import pipeline (`localization/zh_CN.csv.import`).
+
+## Integration Points
+- Engine/runtime constraints are defined in `project.godot` (`4.6`, `GL Compatibility`, `Jolt Physics`, Windows driver `d3d12`).
+- Autoload registrations in `project.godot` are part of runtime wiring; keep names and paths synchronized with scripts.
+- Scene switches rely on `SceneTree.change_scene_to_file` patterns (see `scenes/bootstrap.gd`, `game/ui/scripts/menu_flow.gd`).
+
+## Security
+- Persistence under `user://` is client-local and mutable (`autoload/save_service.gd`), so add defensive load/default handling.
+- `autoload/event_bus.gd` signals are global coupling points; keep signal names stable and scope emissions carefully.
+- Changes to global state/config services can affect whole-run behavior; verify interactions in `autoload/game_state.gd` and `autoload/config_service.gd`.
