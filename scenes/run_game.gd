@@ -2,8 +2,11 @@ extends Node2D
 
 const ENEMY_SCENE := preload("res://game/enemies/scenes/zombie_basic.tscn")
 const BULLET_SCENE := preload("res://game/weapons/scenes/bullet.tscn")
+const AOE_FIELD_SCENE := preload("res://game/weapons/scenes/aoe_field.tscn")
 const DEFAULT_WEAPON_RESOURCES: Array[WeaponEntry] = [
 	preload("res://game/weapons/data/pulse_weapon.tres"),
+	preload("res://game/weapons/data/laser_weapon.tres"),
+	preload("res://game/weapons/data/summon_blackhole_weapon.tres"),
 	preload("res://game/weapons/data/scatter_weapon.tres"),
 	preload("res://game/weapons/data/arc_weapon.tres"),
 ]
@@ -32,6 +35,7 @@ const UPGRADE_HIT_RADIUS := 3
 @onready var player: CharacterBody2D = $Player
 @onready var enemy_container: Node2D = $EnemyContainer
 @onready var bullet_container: Node2D = $BulletContainer
+@onready var summon_container: Node2D = $SummonContainer
 @onready var health_label: Label = $UILayer/HealthLabel
 @onready var kill_label: Label = $UILayer/KillLabel
 @onready var wave_label: Label = $UILayer/WaveLabel
@@ -202,6 +206,7 @@ func _init_weapon_pool() -> void:
 		var weapon := {
 			"id": entry_id,
 			"name": String(entry.weapon_name),
+			"weapon_kind": entry.weapon_kind,
 			"cooldown": 0.0,
 			"fire_interval": float(entry.fire_interval),
 			"fire_interval_min": float(entry.fire_interval_min),
@@ -209,6 +214,11 @@ func _init_weapon_pool() -> void:
 			"spread_degrees": float(entry.spread_degrees),
 			"hit_radius": float(entry.hit_radius),
 			"damage": float(entry.damage),
+			"laser_width": float(entry.laser_width),
+			"laser_duration": float(entry.laser_duration),
+			"summon_duration": float(entry.summon_duration),
+			"summon_tick_interval": float(entry.summon_tick_interval),
+			"summon_radius": float(entry.summon_radius),
 		}
 		_weapon_pool[weapon.id] = weapon
 		_weapon_order.append(weapon.id)
@@ -269,16 +279,85 @@ func _fire_weapon(weapon: Dictionary) -> void:
 	var spread_degrees := float(weapon.spread_degrees)
 	var hit_radius := float(weapon.hit_radius)
 	var damage := float(weapon.damage)
+	var weapon_kind := StringName(String(weapon.weapon_kind))
+	var weapon_id := String(weapon.id)
+
+	if weapon_kind == &"summon":
+		_spawn_black_hole(weapon, nearest_enemy, damage)
+		return
+
+	if weapon_kind == &"laser":
+		_fire_laser_weapon(weapon, nearest_enemy, damage)
+		return
 
 	if projectile_count <= 1:
-		_spawn_projectile(base_direction, hit_radius, damage, nearest_enemy, String(weapon.id))
+		_spawn_projectile(base_direction, hit_radius, damage, nearest_enemy, weapon_id)
 		return
 
 	var center_index := float(projectile_count - 1) * 0.5
 	for i in projectile_count:
 		var angle_deg := (float(i) - center_index) * spread_degrees
 		var direction := base_direction.rotated(deg_to_rad(angle_deg))
-		_spawn_projectile(direction, hit_radius, damage, nearest_enemy, String(weapon.id))
+		_spawn_projectile(direction, hit_radius, damage, nearest_enemy, weapon_id)
+
+func _spawn_black_hole(weapon: Dictionary, target_enemy: EnemyBase, damage: float) -> void:
+	var spawn_position := player.global_position + Vector2(0.0, -120.0)
+	if target_enemy != null and is_instance_valid(target_enemy):
+		spawn_position = target_enemy.global_position
+
+	var source_weapon_id := StringName(String(weapon.id))
+	var info := DamageInfo.from_values(damage, &"summon", source_weapon_id)
+
+	var field := AOE_FIELD_SCENE.instantiate() as AOEFieldRuntime
+	field.global_position = spawn_position
+	field.configure(float(weapon.summon_radius), float(weapon.summon_tick_interval), float(weapon.summon_duration), info)
+	field.pulse_damage.connect(_on_summon_pulse_damage)
+	field.expired.connect(_on_summon_expired)
+	summon_container.add_child(field)
+
+func _on_summon_pulse_damage(position: Vector2, radius: float, info: DamageInfo) -> void:
+	for child in enemy_container.get_children():
+		var enemy := child as EnemyBase
+		if enemy == null:
+			continue
+		if enemy.global_position.distance_to(position) > radius:
+			continue
+		_apply_damage_to_enemy(enemy, info)
+
+func _on_summon_expired(field: AOEFieldRuntime) -> void:
+	if field == null:
+		return
+	if not is_instance_valid(field):
+		return
+	field.queue_free()
+
+func _fire_laser_weapon(weapon: Dictionary, target_enemy: EnemyBase, damage: float) -> void:
+	if target_enemy == null:
+		return
+	if not is_instance_valid(target_enemy):
+		return
+
+	var source_weapon_id := StringName(String(weapon.id))
+	var damage_info := DamageInfo.from_values(damage, &"laser", source_weapon_id)
+	_apply_damage_to_enemy(target_enemy, damage_info)
+
+	var laser_width := maxf(1.0, float(weapon.laser_width))
+	var laser_duration := maxf(0.03, float(weapon.laser_duration))
+	_spawn_laser_line(player.global_position, target_enemy.global_position, laser_width, laser_duration)
+
+func _spawn_laser_line(start_pos: Vector2, end_pos: Vector2, width: float, duration: float) -> void:
+	var line := Line2D.new()
+	line.z_index = 6
+	line.width = width
+	line.default_color = Color(1.0, 0.25, 0.25, 0.95)
+	line.position = start_pos
+	line.add_point(Vector2.ZERO)
+	line.add_point(end_pos - start_pos)
+	bullet_container.add_child(line)
+
+	var tween := create_tween()
+	tween.tween_property(line, "modulate:a", 0.0, duration)
+	tween.finished.connect(line.queue_free)
 
 func _spawn_projectile(direction: Vector2, hit_radius: float, damage: float, target_enemy: EnemyBase, weapon_id: String) -> void:
 	var bullet := BULLET_SCENE.instantiate() as ProjectileRuntime
@@ -306,7 +385,8 @@ func _update_projectile_state() -> void:
 		if hit_enemy != null:
 			var damage := float(bullet.get_meta("damage", 1.0))
 			var source_weapon_id := StringName(String(bullet.get_meta("weapon_id", "")))
-			hit_enemy.apply_weapon_hit(damage, &"projectile", source_weapon_id)
+			var damage_info := DamageInfo.from_values(damage, &"projectile", source_weapon_id)
+			_apply_damage_to_enemy(hit_enemy, damage_info)
 			bullet.queue_free()
 
 func _on_enemy_defeated(enemy: EnemyBase) -> void:
@@ -317,6 +397,13 @@ func _on_enemy_defeated(enemy: EnemyBase) -> void:
 	_kill_count += 1
 	_gain_experience(exp_per_kill)
 	enemy.queue_free()
+
+func _apply_damage_to_enemy(enemy: EnemyBase, info: DamageInfo) -> void:
+	if enemy == null:
+		return
+	if not is_instance_valid(enemy):
+		return
+	enemy.apply_damage_info(info)
 
 func _find_hit_enemy(point: Vector2, hit_radius: float) -> EnemyBase:
 	for child in enemy_container.get_children():
@@ -353,6 +440,8 @@ func _on_player_died() -> void:
 		child.queue_free()
 	for child in bullet_container.get_children():
 		child.queue_free()
+	for child in summon_container.get_children():
+		child.queue_free()
 	fail_panel.visible = true
 	victory_panel.visible = false
 	_is_upgrade_open = false
@@ -369,6 +458,8 @@ func _finish_victory() -> void:
 	var reward_gold := _reward_settlement.settle_gold(base_settlement_gold + _kill_count * kill_gold_bonus, _current_wave_index)
 	GameState.add_gold(reward_gold)
 	for child in bullet_container.get_children():
+		child.queue_free()
+	for child in summon_container.get_children():
 		child.queue_free()
 	victory_panel.visible = true
 	fail_panel.visible = false

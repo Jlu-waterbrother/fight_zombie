@@ -1,3 +1,10 @@
-[gd_scene format=3]
+[gd_scene load_steps=2 format=3]
 
-[node name="AOEField" type="Area2D"]
+[ext_resource type="Script" path="res://game/weapons/scripts/aoe_field_runtime.gd" id="1"]
+
+[node name="AOEField" type="Node2D"]
+script = ExtResource("1")
+
+[node name="Visual" type="Polygon2D" parent="."]
+color = Color(0.08, 0.08, 0.08, 0.82)
+polygon = PackedVector2Array(36, 0, 31.1769, 18, 18, 31.1769, 0, 36, -18, 31.1769, -31.1769, 18, -36, 0, -31.1769, -18, -18, -31.1769, 0, -36, 18, -31.1769, 31.1769, -18)

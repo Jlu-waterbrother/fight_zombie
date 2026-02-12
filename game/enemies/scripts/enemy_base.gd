@@ -16,20 +16,27 @@ var attack_line_y := INF
 var _is_attacking := false
 var _attack_cooldown := 0.0
 var _is_dead := false
+var _pending_attack_line_y := INF
+var _pending_attack_damage := 0.0
+var _pending_max_health := 0.0
+var _has_pending_config := false
 
 func _ready() -> void:
 	health_component.died.connect(_on_health_died)
+	if _has_pending_config:
+		_apply_runtime_config(_pending_attack_line_y, _pending_attack_damage, _pending_max_health)
+		_has_pending_config = false
 	_refresh_health_bar()
 
 func configure_for_run(next_attack_line_y: float, next_attack_damage: float, next_max_health: float) -> void:
-	attack_line_y = next_attack_line_y
-	attack_damage = next_attack_damage
-	health_component.max_health = maxf(1.0, next_max_health)
-	health_component.current_health = health_component.max_health
-	_is_dead = false
-	_is_attacking = false
-	_attack_cooldown = 0.0
-	_refresh_health_bar()
+	if not is_node_ready() or health_component == null:
+		_pending_attack_line_y = next_attack_line_y
+		_pending_attack_damage = next_attack_damage
+		_pending_max_health = next_max_health
+		_has_pending_config = true
+		return
+
+	_apply_runtime_config(next_attack_line_y, next_attack_damage, next_max_health)
 
 func _physics_process(delta: float) -> void:
 	if _is_dead:
@@ -55,14 +62,20 @@ func _physics_process(delta: float) -> void:
 		_attack_cooldown = 0.0
 
 func apply_weapon_hit(damage: float, source_kind: StringName = &"projectile", source_weapon_id: StringName = &"") -> bool:
+	var info := DamageInfo.from_values(damage, source_kind, source_weapon_id)
+	return apply_damage_info(info)
+
+func apply_damage_info(info: DamageInfo) -> bool:
 	if _is_dead:
 		return true
+	if info == null:
+		return false
 
-	var final_damage := maxf(0.0, damage)
+	var final_damage := maxf(0.0, info.amount)
 	if final_damage <= 0.0:
 		return false
 
-	if source_kind == &"projectile" and source_weapon_id != &"":
+	if info.source_kind == &"projectile" and info.source_weapon_id != &"":
 		pass
 
 	health_component.apply_damage(final_damage)
@@ -103,3 +116,13 @@ func _show_damage_popup(damage: float) -> void:
 	tween.tween_property(damage_label, "position", damage_label.position + Vector2(0.0, -14.0), 0.35)
 	tween.parallel().tween_property(damage_label, "modulate:a", 0.0, 0.35)
 	tween.finished.connect(damage_label.queue_free)
+
+func _apply_runtime_config(next_attack_line_y: float, next_attack_damage: float, next_max_health: float) -> void:
+	attack_line_y = next_attack_line_y
+	attack_damage = next_attack_damage
+	health_component.max_health = maxf(1.0, next_max_health)
+	health_component.current_health = health_component.max_health
+	_is_dead = false
+	_is_attacking = false
+	_attack_cooldown = 0.0
+	_refresh_health_bar()

@@ -6,6 +6,7 @@
 script = ExtResource("1")
 weapon_id = "scatter"
 weapon_name = "散射枪"
+weapon_kind = &"projectile"
 fire_interval = 0.4
 fire_interval_min = 0.12
 projectile_count = 2

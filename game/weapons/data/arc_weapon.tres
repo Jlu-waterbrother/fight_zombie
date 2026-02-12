@@ -6,6 +6,7 @@
 script = ExtResource("1")
 weapon_id = "arc"
 weapon_name = "弧光枪"
+weapon_kind = &"projectile"
 fire_interval = 0.55
 fire_interval_min = 0.2
 projectile_count = 3

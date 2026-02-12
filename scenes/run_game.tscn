@@ -13,6 +13,8 @@ script = ExtResource("3")
 
 [node name="BulletContainer" type="Node2D" parent="."]
 
+[node name="SummonContainer" type="Node2D" parent="."]
+
 [node name="UILayer" type="CanvasLayer" parent="."]
 
 [node name="HealthLabel" type="Label" parent="UILayer"]
