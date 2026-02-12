@@ -13,6 +13,15 @@ config_version=5
 config/name="nameless"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.svg"
+run/main_scene="res://scenes/bootstrap.tscn"
+
+[autoload]
+
+GameState="*res://autoload/game_state.gd"
+SaveService="*res://autoload/save_service.gd"
+EventBus="*res://autoload/event_bus.gd"
+ConfigService="*res://autoload/config_service.gd"
+AudioService="*res://autoload/audio_service.gd"
 
 [physics]
 
