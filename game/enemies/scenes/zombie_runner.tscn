@@ -1,0 +1,8 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://game/enemies/scenes/enemy_base.tscn" id="1"]
+
+[node name="ZombieRunner" instance=ExtResource("1")]
+modulate = Color(1, 0.82, 0.82, 1)
+move_speed = 155.0
+attack_interval = 0.62

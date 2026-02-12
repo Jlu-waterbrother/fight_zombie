@@ -1,4 +1,174 @@
-[gd_resource type="Resource" format=3]
+[gd_resource type="Resource" script_class="WaveTable" load_steps=20 format=3]
+
+[ext_resource type="Script" path="res://game/waves/scripts/wave_table.gd" id="1"]
+[ext_resource type="Script" path="res://game/waves/scripts/wave_definition.gd" id="2"]
+[ext_resource type="Script" path="res://game/waves/scripts/wave_spawn_batch.gd" id="3"]
+[ext_resource type="PackedScene" path="res://game/enemies/scenes/zombie_basic.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://game/enemies/scenes/zombie_runner.tscn" id="5"]
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w1a"]
+script = ExtResource("3")
+enemy_scene = ExtResource("4")
+count = 6
+start_delay = 0.0
+spawn_interval = 0.48
+burst_size = 1
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w1b"]
+script = ExtResource("3")
+enemy_scene = ExtResource("4")
+count = 4
+start_delay = 2.0
+spawn_interval = 0.2
+burst_size = 2
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w1c"]
+script = ExtResource("3")
+enemy_scene = ExtResource("5")
+count = 3
+start_delay = 1.1
+spawn_interval = 0.7
+hp_multiplier = 0.9
+attack_multiplier = 1.1
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w2a"]
+script = ExtResource("3")
+enemy_scene = ExtResource("4")
+count = 8
+start_delay = 0.0
+spawn_interval = 0.34
+burst_size = 1
+hp_multiplier = 1.15
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w2b"]
+script = ExtResource("3")
+enemy_scene = ExtResource("4")
+count = 6
+start_delay = 1.6
+spawn_interval = 0.18
+burst_size = 2
+hp_multiplier = 1.2
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w2c"]
+script = ExtResource("3")
+enemy_scene = ExtResource("5")
+count = 5
+start_delay = 0.9
+spawn_interval = 0.4
+burst_size = 1
+hp_multiplier = 1.0
+attack_multiplier = 1.25
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w3a"]
+script = ExtResource("3")
+enemy_scene = ExtResource("4")
+count = 12
+start_delay = 0.0
+spawn_interval = 0.22
+burst_size = 2
+hp_multiplier = 1.3
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w3b"]
+script = ExtResource("3")
+enemy_scene = ExtResource("4")
+count = 10
+start_delay = 1.2
+spawn_interval = 0.14
+burst_size = 3
+hp_multiplier = 1.45
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w3c"]
+script = ExtResource("3")
+enemy_scene = ExtResource("5")
+count = 8
+start_delay = 0.75
+spawn_interval = 0.26
+burst_size = 2
+hp_multiplier = 1.2
+attack_multiplier = 1.35
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w4a"]
+script = ExtResource("3")
+enemy_scene = ExtResource("4")
+count = 14
+start_delay = 0.0
+spawn_interval = 0.2
+burst_size = 2
+hp_multiplier = 1.55
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w4b"]
+script = ExtResource("3")
+enemy_scene = ExtResource("5")
+count = 10
+start_delay = 0.6
+spawn_interval = 0.17
+burst_size = 3
+hp_multiplier = 1.3
+attack_multiplier = 1.45
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w4c"]
+script = ExtResource("3")
+enemy_scene = ExtResource("4")
+count = 8
+start_delay = 2.0
+spawn_interval = 0.1
+burst_size = 4
+hp_multiplier = 1.7
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w5a"]
+script = ExtResource("3")
+enemy_scene = ExtResource("4")
+count = 16
+start_delay = 0.0
+spawn_interval = 0.16
+burst_size = 3
+hp_multiplier = 1.8
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w5b"]
+script = ExtResource("3")
+enemy_scene = ExtResource("5")
+count = 14
+start_delay = 0.35
+spawn_interval = 0.13
+burst_size = 4
+hp_multiplier = 1.45
+attack_multiplier = 1.6
+
+[sub_resource type="Resource" id="WaveSpawnBatch_w5c"]
+script = ExtResource("3")
+enemy_scene = ExtResource("4")
+count = 12
+start_delay = 1.8
+spawn_interval = 0.08
+burst_size = 5
+hp_multiplier = 2.0
+attack_multiplier = 1.2
+
+[sub_resource type="Resource" id="WaveDefinition_1"]
+script = ExtResource("2")
+wave_name = "Wave 1"
+batches = Array[Resource]([SubResource("WaveSpawnBatch_w1a"), SubResource("WaveSpawnBatch_w1b"), SubResource("WaveSpawnBatch_w1c")])
+
+[sub_resource type="Resource" id="WaveDefinition_2"]
+script = ExtResource("2")
+wave_name = "Wave 2"
+batches = Array[Resource]([SubResource("WaveSpawnBatch_w2a"), SubResource("WaveSpawnBatch_w2b"), SubResource("WaveSpawnBatch_w2c")])
+
+[sub_resource type="Resource" id="WaveDefinition_3"]
+script = ExtResource("2")
+wave_name = "Wave 3"
+batches = Array[Resource]([SubResource("WaveSpawnBatch_w3a"), SubResource("WaveSpawnBatch_w3b"), SubResource("WaveSpawnBatch_w3c")])
+
+[sub_resource type="Resource" id="WaveDefinition_4"]
+script = ExtResource("2")
+wave_name = "Wave 4"
+batches = Array[Resource]([SubResource("WaveSpawnBatch_w4a"), SubResource("WaveSpawnBatch_w4b"), SubResource("WaveSpawnBatch_w4c")])
+
+[sub_resource type="Resource" id="WaveDefinition_5"]
+script = ExtResource("2")
+wave_name = "Wave 5"
+batches = Array[Resource]([SubResource("WaveSpawnBatch_w5a"), SubResource("WaveSpawnBatch_w5b"), SubResource("WaveSpawnBatch_w5c")])
 
 [resource]
-resource_name = "wave_table_default_template"
+script = ExtResource("1")
+waves = Array[Resource]([SubResource("WaveDefinition_1"), SubResource("WaveDefinition_2"), SubResource("WaveDefinition_3"), SubResource("WaveDefinition_4"), SubResource("WaveDefinition_5")])
