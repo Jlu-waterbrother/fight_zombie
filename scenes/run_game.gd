@@ -2,13 +2,27 @@ extends Node2D
 
 const ENEMY_SCENE := preload("res://game/enemies/scenes/zombie_basic.tscn")
 const BULLET_SCENE := preload("res://game/weapons/scenes/bullet.tscn")
+const DEFAULT_WEAPON_RESOURCES: Array[WeaponEntry] = [
+	preload("res://game/weapons/data/pulse_weapon.tres"),
+	preload("res://game/weapons/data/scatter_weapon.tres"),
+	preload("res://game/weapons/data/arc_weapon.tres"),
+]
+const UPGRADE_UNLOCK_WEAPON := 1
+const UPGRADE_FIRE_RATE := 2
+const UPGRADE_HIT_RADIUS := 3
 
 @export var enemy_spawn_interval := 1.2
 @export var enemy_contact_damage := 25.0
 @export var enemy_contact_radius := 28.0
-@export var auto_attack_interval := 0.22
-@export var projectile_hit_radius := 18.0
+@export var total_waves := 3
+@export var enemies_per_wave_base := 8
+@export var enemies_per_wave_growth := 4
+@export var inter_wave_delay := 1.8
+@export var max_equipped_weapons := 3
+@export var weapon_entries: Array[WeaponEntry] = []
 @export var projectile_despawn_margin := 40.0
+@export var base_settlement_gold := 20
+@export var kill_gold_bonus := 1
 @export var exp_per_kill := 10
 @export var exp_to_level_base := 40
 @export var exp_to_level_growth := 1.35
@@ -18,16 +32,22 @@ const BULLET_SCENE := preload("res://game/weapons/scenes/bullet.tscn")
 @onready var bullet_container: Node2D = $BulletContainer
 @onready var health_label: Label = $UILayer/HealthLabel
 @onready var kill_label: Label = $UILayer/KillLabel
+@onready var wave_label: Label = $UILayer/WaveLabel
 @onready var level_label: Label = $UILayer/LevelLabel
 @onready var exp_label: Label = $UILayer/ExpLabel
+@onready var weapon_label: Label = $UILayer/WeaponLabel
 @onready var fail_panel: PanelContainer = $UILayer/FailPanel
 @onready var restart_button: Button = $UILayer/FailPanel/VBoxContainer/RestartButton
+@onready var victory_panel: PanelContainer = $UILayer/VictoryPanel
+@onready var victory_desc_label: Label = $UILayer/VictoryPanel/VBoxContainer/VictoryDescLabel
+@onready var victory_restart_button: Button = $UILayer/VictoryPanel/VBoxContainer/VictoryRestartButton
 @onready var upgrade_panel: PanelContainer = $UILayer/UpgradePanel
 @onready var fire_rate_button: Button = $UILayer/UpgradePanel/VBoxContainer/FireRateButton
 @onready var hit_radius_button: Button = $UILayer/UpgradePanel/VBoxContainer/HitRadiusButton
 
 var _spawn_cooldown := 0.0
-var _attack_cooldown := 0.0
+var _inter_wave_cooldown := 0.0
+var _is_run_over := false
 var _is_failed := false
 var _kill_count := 0
 var _current_level := 1
@@ -35,50 +55,151 @@ var _current_exp := 0
 var _next_level_exp := 40
 var _pending_level_ups := 0
 var _is_upgrade_open := false
+var _option_a: Dictionary = {}
+var _option_b: Dictionary = {}
+var _weapon_pool: Dictionary = {}
+var _weapon_order: Array[String] = []
+var _equipped_weapon_ids: Array[String] = []
+var _current_wave_index := 0
+var _current_wave_spawn_remaining := 0
+var _is_between_waves := false
+var _run_elapsed_seconds := 0.0
+var _reward_settlement := RewardSettlement.new()
 
 func _ready() -> void:
+	GameState.load_persistent_state()
 	GameState.reset_run_state()
 	GameState.start_run()
 
 	var player_controller := player as PlayerController
 	player_controller.health_component.died.connect(_on_player_died)
 	restart_button.pressed.connect(_on_restart_pressed)
-	fire_rate_button.pressed.connect(_on_pick_fire_rate_upgrade)
-	hit_radius_button.pressed.connect(_on_pick_hit_radius_upgrade)
+	victory_restart_button.pressed.connect(_on_restart_pressed)
+	fire_rate_button.pressed.connect(_on_pick_option_a_upgrade)
+	hit_radius_button.pressed.connect(_on_pick_option_b_upgrade)
+	_init_weapon_pool()
+	if not _weapon_order.is_empty():
+		_unlock_weapon(_weapon_order[0])
 
 	fail_panel.visible = false
+	victory_panel.visible = false
 	upgrade_panel.visible = false
 	_next_level_exp = exp_to_level_base
-	_spawn_enemy()
+	_start_wave(1)
 	_update_health_text()
 	_update_kill_text()
+	_update_wave_text()
 	_update_progression_text()
+	_update_weapon_text()
 
 func _process(delta: float) -> void:
-	if _is_failed:
+	if _is_run_over:
 		return
+
+	_run_elapsed_seconds += delta
 	if _is_upgrade_open:
 		_update_health_text()
 		_update_kill_text()
+		_update_wave_text()
 		_update_progression_text()
+		_update_weapon_text()
 		return
 
-	_spawn_cooldown -= delta
-	if _spawn_cooldown <= 0.0:
-		_spawn_enemy()
-		_spawn_cooldown = enemy_spawn_interval
+	_tick_wave_spawn(delta)
 
-	_attack_cooldown -= delta
-	if _attack_cooldown <= 0.0:
-		_attack_cooldown = auto_attack_interval
-		_fire_projectile_at_nearest_enemy()
+	for weapon_id in _equipped_weapon_ids:
+		_tick_weapon(delta, weapon_id)
 
 	_check_enemy_contact()
 	_update_projectile_state()
+	_try_complete_wave_or_run(delta)
 	_update_health_text()
 	_update_kill_text()
+	_update_wave_text()
 	_update_progression_text()
+	_update_weapon_text()
 	_try_open_upgrade_panel()
+
+func _start_wave(wave_index: int) -> void:
+	_current_wave_index = wave_index
+	GameState.current_wave = wave_index
+	_current_wave_spawn_remaining = _enemy_count_for_wave(wave_index)
+	_spawn_cooldown = 0.0
+	_is_between_waves = false
+
+func _tick_wave_spawn(delta: float) -> void:
+	if _is_between_waves:
+		return
+	if _current_wave_index <= 0 or _current_wave_index > total_waves:
+		return
+	if _current_wave_spawn_remaining <= 0:
+		return
+
+	_spawn_cooldown -= delta
+	if _spawn_cooldown > 0.0:
+		return
+
+	_spawn_enemy()
+	_current_wave_spawn_remaining -= 1
+	_spawn_cooldown = enemy_spawn_interval
+
+func _try_complete_wave_or_run(delta: float) -> void:
+	if _current_wave_spawn_remaining > 0:
+		return
+	if enemy_container.get_child_count() > 0:
+		return
+
+	if _current_wave_index >= total_waves:
+		_finish_victory()
+		return
+
+	if not _is_between_waves:
+		_is_between_waves = true
+		_inter_wave_cooldown = inter_wave_delay
+
+	_inter_wave_cooldown -= delta
+	if _inter_wave_cooldown <= 0.0:
+		_start_wave(_current_wave_index + 1)
+
+func _enemy_count_for_wave(wave_index: int) -> int:
+	return max(1, enemies_per_wave_base + (wave_index - 1) * enemies_per_wave_growth)
+
+func _init_weapon_pool() -> void:
+	_weapon_pool.clear()
+	_weapon_order.clear()
+	var entries: Array[WeaponEntry] = weapon_entries
+	if entries.is_empty():
+		entries = DEFAULT_WEAPON_RESOURCES
+
+	for entry in entries:
+		if entry == null:
+			continue
+		var entry_id := String(entry.weapon_id).strip_edges()
+		if entry_id == "":
+			continue
+		if _weapon_pool.has(entry_id):
+			continue
+		var weapon := {
+			"id": entry_id,
+			"name": String(entry.weapon_name),
+			"cooldown": 0.0,
+			"fire_interval": float(entry.fire_interval),
+			"fire_interval_min": float(entry.fire_interval_min),
+			"projectile_count": max(1, int(entry.projectile_count)),
+			"spread_degrees": float(entry.spread_degrees),
+			"hit_radius": float(entry.hit_radius),
+		}
+		_weapon_pool[weapon.id] = weapon
+		_weapon_order.append(weapon.id)
+
+func _unlock_weapon(weapon_id: String) -> void:
+	if _equipped_weapon_ids.has(weapon_id):
+		return
+	if _equipped_weapon_ids.size() >= max_equipped_weapons:
+		return
+	if not _weapon_pool.has(weapon_id):
+		return
+	_equipped_weapon_ids.append(weapon_id)
 
 func _spawn_enemy() -> void:
 	var enemy := ENEMY_SCENE.instantiate() as EnemyBase
@@ -88,7 +209,17 @@ func _spawn_enemy() -> void:
 	enemy.global_position = Vector2(randf_range(40.0, viewport_size.x - 40.0), -32.0)
 	enemy_container.add_child(enemy)
 
-func _fire_projectile_at_nearest_enemy() -> void:
+func _tick_weapon(delta: float, weapon_id: String) -> void:
+	if not _weapon_pool.has(weapon_id):
+		return
+	var weapon: Dictionary = _weapon_pool[weapon_id]
+	weapon.cooldown = float(weapon.cooldown) - delta
+	if float(weapon.cooldown) > 0.0:
+		return
+	_fire_weapon(weapon)
+	weapon.cooldown = float(weapon.fire_interval)
+
+func _fire_weapon(weapon: Dictionary) -> void:
 	var nearest_enemy: EnemyBase = null
 	var nearest_distance := INF
 	for child in enemy_container.get_children():
@@ -105,10 +236,26 @@ func _fire_projectile_at_nearest_enemy() -> void:
 
 	if nearest_distance <= 0.0:
 		return
+	var base_direction := (nearest_enemy.global_position - player.global_position).normalized()
+	var projectile_count := int(weapon.projectile_count)
+	var spread_degrees := float(weapon.spread_degrees)
+	var hit_radius := float(weapon.hit_radius)
 
+	if projectile_count <= 1:
+		_spawn_projectile(base_direction, hit_radius)
+		return
+
+	var center_index := float(projectile_count - 1) * 0.5
+	for i in projectile_count:
+		var angle_deg := (float(i) - center_index) * spread_degrees
+		var direction := base_direction.rotated(deg_to_rad(angle_deg))
+		_spawn_projectile(direction, hit_radius)
+
+func _spawn_projectile(direction: Vector2, hit_radius: float) -> void:
 	var bullet := BULLET_SCENE.instantiate() as ProjectileRuntime
 	bullet.global_position = player.global_position
-	bullet.direction = (nearest_enemy.global_position - player.global_position).normalized()
+	bullet.direction = direction.normalized()
+	bullet.set_meta("hit_radius", hit_radius)
 	bullet_container.add_child(bullet)
 
 func _update_projectile_state() -> void:
@@ -122,19 +269,20 @@ func _update_projectile_state() -> void:
 			bullet.queue_free()
 			continue
 
-		var hit_enemy := _find_hit_enemy(bullet.global_position)
+		var hit_radius := float(bullet.get_meta("hit_radius", 18.0))
+		var hit_enemy := _find_hit_enemy(bullet.global_position, hit_radius)
 		if hit_enemy != null:
 			hit_enemy.queue_free()
 			bullet.queue_free()
 			_kill_count += 1
 			_gain_experience(exp_per_kill)
 
-func _find_hit_enemy(point: Vector2) -> EnemyBase:
+func _find_hit_enemy(point: Vector2, hit_radius: float) -> EnemyBase:
 	for child in enemy_container.get_children():
 		var enemy := child as EnemyBase
 		if enemy == null:
 			continue
-		if enemy.global_position.distance_to(point) <= projectile_hit_radius:
+		if enemy.global_position.distance_to(point) <= hit_radius:
 			return enemy
 	return null
 
@@ -155,14 +303,39 @@ func _check_enemy_contact() -> void:
 			enemy.queue_free()
 
 func _on_player_died() -> void:
+	if _is_run_over:
+		return
+
+	_is_run_over = true
 	_is_failed = true
+	GameState.record_run_result(_kill_count, _current_level, _current_wave_index, _run_elapsed_seconds)
 	GameState.finish_run(false)
 	for child in enemy_container.get_children():
 		child.queue_free()
 	for child in bullet_container.get_children():
 		child.queue_free()
 	fail_panel.visible = true
+	victory_panel.visible = false
 	upgrade_panel.visible = false
+
+func _finish_victory() -> void:
+	if _is_run_over:
+		return
+
+	_is_run_over = true
+	GameState.record_run_result(_kill_count, _current_level, _current_wave_index, _run_elapsed_seconds)
+	GameState.finish_run(true)
+	var reward_gold := _reward_settlement.settle_gold(base_settlement_gold + _kill_count * kill_gold_bonus, _current_wave_index)
+	GameState.add_gold(reward_gold)
+	for child in bullet_container.get_children():
+		child.queue_free()
+	victory_panel.visible = true
+	fail_panel.visible = false
+	upgrade_panel.visible = false
+	var best_time_text := "%.1f" % GameState.best_time_seconds
+	if GameState.best_time_seconds >= 999998.0:
+		best_time_text = "--"
+	victory_desc_label.text = "通关波次: %d\n击杀: %d\n等级: %d\n用时: %.1f 秒\n本局金币: %d\n累计金币: %d\n最佳击杀: %d\n最佳等级: %d\n最佳用时: %s 秒" % [_current_wave_index, _kill_count, _current_level, _run_elapsed_seconds, reward_gold, GameState.total_gold, GameState.best_kills, GameState.best_level, best_time_text]
 
 func _on_restart_pressed() -> void:
 	get_tree().reload_current_scene()
@@ -175,6 +348,12 @@ func _update_health_text() -> void:
 
 func _update_kill_text() -> void:
 	kill_label.text = "Kills: %d" % _kill_count
+
+func _update_wave_text() -> void:
+	if _is_run_over and not _is_failed:
+		wave_label.text = "Wave: %d/%d (胜利)" % [_current_wave_index, total_waves]
+		return
+	wave_label.text = "Wave: %d/%d  Remaining: %d" % [_current_wave_index, total_waves, _current_wave_spawn_remaining + enemy_container.get_child_count()]
 
 func _gain_experience(amount: int) -> void:
 	if amount <= 0:
@@ -191,6 +370,77 @@ func _try_open_upgrade_panel() -> void:
 		return
 	_is_upgrade_open = true
 	upgrade_panel.visible = true
+	_refresh_upgrade_options()
+
+func _refresh_upgrade_options() -> void:
+	_option_a = _build_unlock_option()
+	if _option_a.is_empty():
+		_option_a = _build_strengthen_option(UPGRADE_FIRE_RATE)
+
+	_option_b = _build_strengthen_option(UPGRADE_HIT_RADIUS)
+	if _option_b.is_empty():
+		_option_b = _build_strengthen_option(UPGRADE_FIRE_RATE)
+
+	fire_rate_button.text = String(_option_a.get("label", "强化武器"))
+	hit_radius_button.text = String(_option_b.get("label", "强化武器"))
+
+func _build_unlock_option() -> Dictionary:
+	if _equipped_weapon_ids.size() >= max_equipped_weapons:
+		return {}
+	var locked_ids: Array[String] = []
+	for weapon_id in _weapon_order:
+		if _equipped_weapon_ids.has(weapon_id):
+			continue
+		locked_ids.append(weapon_id)
+	if locked_ids.is_empty():
+		return {}
+	var weapon_id := locked_ids[0]
+	var weapon: Dictionary = _weapon_pool[weapon_id]
+	return {
+		"type": UPGRADE_UNLOCK_WEAPON,
+		"weapon_id": weapon_id,
+		"label": "解锁新武器：%s" % String(weapon.name),
+	}
+
+func _build_strengthen_option(upgrade_type: int) -> Dictionary:
+	if _equipped_weapon_ids.is_empty():
+		return {}
+	var weapon_id := _select_weapon_for_upgrade(upgrade_type)
+	if weapon_id == "":
+		return {}
+	var weapon: Dictionary = _weapon_pool[weapon_id]
+	if upgrade_type == UPGRADE_FIRE_RATE:
+		return {
+			"type": UPGRADE_FIRE_RATE,
+			"weapon_id": weapon_id,
+			"label": "强化已有武器：%s 射速" % String(weapon.name),
+		}
+	return {
+		"type": UPGRADE_HIT_RADIUS,
+		"weapon_id": weapon_id,
+		"label": "强化已有武器：%s 命中范围" % String(weapon.name),
+	}
+
+func _select_weapon_for_upgrade(upgrade_type: int) -> String:
+	var selected_id := ""
+	if upgrade_type == UPGRADE_FIRE_RATE:
+		var slowest_interval := -1.0
+		for weapon_id in _equipped_weapon_ids:
+			var weapon: Dictionary = _weapon_pool[weapon_id]
+			var interval := float(weapon.fire_interval)
+			if interval > slowest_interval:
+				slowest_interval = interval
+				selected_id = weapon_id
+		return selected_id
+
+	var smallest_radius := INF
+	for weapon_id in _equipped_weapon_ids:
+		var weapon: Dictionary = _weapon_pool[weapon_id]
+		var radius := float(weapon.hit_radius)
+		if radius < smallest_radius:
+			smallest_radius = radius
+			selected_id = weapon_id
+	return selected_id
 
 func _close_upgrade_panel() -> void:
 	_pending_level_ups = max(0, _pending_level_ups - 1)
@@ -200,14 +450,45 @@ func _close_upgrade_panel() -> void:
 	_is_upgrade_open = false
 	upgrade_panel.visible = false
 
-func _on_pick_fire_rate_upgrade() -> void:
-	auto_attack_interval = maxf(0.06, auto_attack_interval * 0.88)
+func _on_pick_option_a_upgrade() -> void:
+	_apply_upgrade(_option_a)
 	_close_upgrade_panel()
 
-func _on_pick_hit_radius_upgrade() -> void:
-	projectile_hit_radius += 3.0
+func _on_pick_option_b_upgrade() -> void:
+	_apply_upgrade(_option_b)
 	_close_upgrade_panel()
+
+func _apply_upgrade(option: Dictionary) -> void:
+	if option.is_empty():
+		return
+	var upgrade_type := int(option.get("type", 0))
+	var weapon_id := String(option.get("weapon_id", ""))
+
+	match upgrade_type:
+		UPGRADE_UNLOCK_WEAPON:
+			_unlock_weapon(weapon_id)
+		UPGRADE_FIRE_RATE:
+			if _weapon_pool.has(weapon_id):
+				var weapon: Dictionary = _weapon_pool[weapon_id]
+				var min_interval := float(weapon.fire_interval_min)
+				weapon.fire_interval = maxf(min_interval, float(weapon.fire_interval) * 0.88)
+		UPGRADE_HIT_RADIUS:
+			if _weapon_pool.has(weapon_id):
+				var weapon: Dictionary = _weapon_pool[weapon_id]
+				weapon.hit_radius = float(weapon.hit_radius) + 3.0
 
 func _update_progression_text() -> void:
 	level_label.text = "Level: %d" % _current_level
 	exp_label.text = "EXP: %d / %d" % [_current_exp, _next_level_exp]
+
+func _update_weapon_text() -> void:
+	if _equipped_weapon_ids.is_empty():
+		weapon_label.text = "Weapons (0/%d): 无" % max_equipped_weapons
+		return
+
+	var names: Array[String] = []
+	for weapon_id in _equipped_weapon_ids:
+		var weapon: Dictionary = _weapon_pool[weapon_id]
+		names.append(String(weapon.name))
+
+	weapon_label.text = "Weapons (%d/%d): %s" % [_equipped_weapon_ids.size(), max_equipped_weapons, "、".join(names)]
