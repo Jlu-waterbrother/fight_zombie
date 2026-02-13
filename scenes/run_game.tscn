@@ -59,6 +59,35 @@ offset_right = 420.0
 offset_bottom = 180.0
 text = "Weapons (1/3): 脉冲枪"
 
+[node name="UpgradeHistoryButton" type="Button" parent="UILayer"]
+offset_left = 470.0
+offset_top = 148.0
+offset_right = 626.0
+offset_bottom = 180.0
+text = "武器强化记录"
+
+[node name="UpgradeHistoryPanel" type="PanelContainer" parent="UILayer"]
+visible = false
+offset_left = 430.0
+offset_top = 186.0
+offset_right = 760.0
+offset_bottom = 442.0
+
+[node name="VBoxContainer" type="VBoxContainer" parent="UILayer/UpgradeHistoryPanel"]
+theme_override_constants/separation = 8
+
+[node name="TitleLabel" type="Label" parent="UILayer/UpgradeHistoryPanel/VBoxContainer"]
+text = "武器强化历史"
+horizontal_alignment = 1
+
+[node name="WeaponTabRow" type="HBoxContainer" parent="UILayer/UpgradeHistoryPanel/VBoxContainer"]
+theme_override_constants/separation = 6
+
+[node name="RecordList" type="ItemList" parent="UILayer/UpgradeHistoryPanel/VBoxContainer"]
+size_flags_vertical = 3
+focus_mode = 0
+select_mode = 1
+
 [node name="FailPanel" type="PanelContainer" parent="UILayer"]
 visible = false
 offset_left = 280.0

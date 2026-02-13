@@ -65,6 +65,10 @@ const UPGRADE_SUMMON_IMPLOSION: StringName = &"summon_implosion"
 @onready var level_label: Label = $UILayer/LevelLabel
 @onready var exp_label: Label = $UILayer/ExpLabel
 @onready var weapon_label: Label = $UILayer/WeaponLabel
+@onready var upgrade_history_button: Button = $UILayer/UpgradeHistoryButton
+@onready var upgrade_history_panel: PanelContainer = $UILayer/UpgradeHistoryPanel
+@onready var upgrade_history_tab_row: HBoxContainer = $UILayer/UpgradeHistoryPanel/VBoxContainer/WeaponTabRow
+@onready var upgrade_history_record_list: ItemList = $UILayer/UpgradeHistoryPanel/VBoxContainer/RecordList
 @onready var fail_panel: PanelContainer = $UILayer/FailPanel
 @onready var restart_button: Button = $UILayer/FailPanel/VBoxContainer/RestartButton
 @onready var back_to_menu_button: Button = $UILayer/FailPanel/VBoxContainer/BackToMenuButton
@@ -88,6 +92,10 @@ var _is_upgrade_open := false
 var _upgrade_options: Array[Dictionary] = []
 var _upgrade_buttons: Array[Button] = []
 var _upgrade_card_views: Array[Dictionary] = []
+var _initial_weapon_id := ""
+var _selected_history_weapon_id := ""
+var _weapon_upgrade_levels: Dictionary = {}
+var _weapon_upgrade_order: Dictionary = {}
 var _weapon_pool: Dictionary = {}
 var _weapon_order: Array[String] = []
 var _equipped_weapon_ids: Array[String] = []
@@ -115,6 +123,7 @@ func _ready() -> void:
 	back_to_menu_button.pressed.connect(_on_back_to_menu_pressed)
 	victory_restart_button.pressed.connect(_on_restart_pressed)
 	victory_back_to_menu_button.pressed.connect(_on_back_to_menu_pressed)
+	upgrade_history_button.pressed.connect(_on_toggle_upgrade_history_pressed)
 	_setup_upgrade_buttons()
 	_init_weapon_pool()
 	_apply_run_modifiers_from_state()
@@ -124,6 +133,7 @@ func _ready() -> void:
 	fail_panel.visible = false
 	victory_panel.visible = false
 	upgrade_panel.visible = false
+	upgrade_history_panel.visible = false
 	_next_level_exp = exp_to_level_base
 	_start_wave(1)
 	_update_health_text()
@@ -432,6 +442,13 @@ func _unlock_weapon(weapon_id: String) -> void:
 	if not _weapon_pool.has(weapon_id):
 		return
 	_equipped_weapon_ids.append(weapon_id)
+	if _initial_weapon_id == "":
+		_initial_weapon_id = weapon_id
+	if not _weapon_upgrade_levels.has(weapon_id):
+		_weapon_upgrade_levels[weapon_id] = {}
+	if not _weapon_upgrade_order.has(weapon_id):
+		_weapon_upgrade_order[weapon_id] = []
+	_refresh_upgrade_history_tabs()
 
 func _tick_weapon(delta: float, weapon_id: String) -> void:
 	if not _weapon_pool.has(weapon_id):
@@ -781,6 +798,7 @@ func _on_player_died() -> void:
 	_is_upgrade_open = false
 	GameState.is_paused = false
 	upgrade_panel.visible = false
+	upgrade_history_panel.visible = false
 
 func _finish_victory() -> void:
 	if _is_run_over:
@@ -800,6 +818,7 @@ func _finish_victory() -> void:
 	_is_upgrade_open = false
 	GameState.is_paused = false
 	upgrade_panel.visible = false
+	upgrade_history_panel.visible = false
 	var best_time_text := "%.1f" % GameState.best_time_seconds
 	if GameState.best_time_seconds >= 999998.0:
 		best_time_text = "--"
@@ -810,6 +829,93 @@ func _on_restart_pressed() -> void:
 
 func _on_back_to_menu_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
+
+func _on_toggle_upgrade_history_pressed() -> void:
+	upgrade_history_panel.visible = not upgrade_history_panel.visible
+	if not upgrade_history_panel.visible:
+		return
+	if _initial_weapon_id != "" and _equipped_weapon_ids.has(_initial_weapon_id):
+		_selected_history_weapon_id = _initial_weapon_id
+	elif not _equipped_weapon_ids.is_empty():
+		_selected_history_weapon_id = _equipped_weapon_ids[0]
+	else:
+		_selected_history_weapon_id = ""
+	_refresh_upgrade_history_tabs()
+	_refresh_upgrade_history_records()
+
+func _on_pick_history_weapon(weapon_id: String) -> void:
+	if weapon_id == "":
+		return
+	_selected_history_weapon_id = weapon_id
+	_refresh_upgrade_history_tabs()
+	_refresh_upgrade_history_records()
+
+func _refresh_upgrade_history_tabs() -> void:
+	if upgrade_history_tab_row == null:
+		return
+	for child in upgrade_history_tab_row.get_children():
+		child.queue_free()
+	if _equipped_weapon_ids.is_empty():
+		return
+	if _selected_history_weapon_id == "" or not _equipped_weapon_ids.has(_selected_history_weapon_id):
+		_selected_history_weapon_id = _equipped_weapon_ids[0]
+
+	for weapon_id in _equipped_weapon_ids:
+		var weapon: Dictionary = _weapon_pool.get(weapon_id, {})
+		var tab_button := Button.new()
+		tab_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tab_button.toggle_mode = true
+		tab_button.button_pressed = weapon_id == _selected_history_weapon_id
+		tab_button.text = "%s %s" % [_icon_for_weapon(weapon_id), String(weapon.get("name", weapon_id))]
+		tab_button.pressed.connect(_on_pick_history_weapon.bind(weapon_id))
+		upgrade_history_tab_row.add_child(tab_button)
+
+func _refresh_upgrade_history_records() -> void:
+	if upgrade_history_record_list == null:
+		return
+	upgrade_history_record_list.clear()
+	if _selected_history_weapon_id == "":
+		upgrade_history_record_list.add_item("暂无武器记录")
+		return
+	var weapon: Dictionary = _weapon_pool.get(_selected_history_weapon_id, {})
+	upgrade_history_record_list.add_item("武器：%s" % String(weapon.get("name", _selected_history_weapon_id)))
+
+	var levels : Dictionary = _weapon_upgrade_levels.get(_selected_history_weapon_id, {})
+	var order : Array = _weapon_upgrade_order.get(_selected_history_weapon_id, [])
+	if order.is_empty():
+		upgrade_history_record_list.add_item("暂无强化记录")
+		return
+
+	for upgrade_type_key_value in order:
+		var upgrade_type_key := String(upgrade_type_key_value)
+		var level := int(levels.get(upgrade_type_key, 0))
+		if level <= 0:
+			continue
+		var upgrade_type := StringName(upgrade_type_key)
+		upgrade_history_record_list.add_item("%s %s Lv.%d" % [_icon_for_upgrade_type(upgrade_type), _upgrade_name_for_type(upgrade_type), level])
+
+func _record_weapon_upgrade(weapon_id: String, upgrade_type: StringName) -> void:
+	if weapon_id == "":
+		return
+	var upgrade_type_key := String(upgrade_type)
+	if upgrade_type_key == "":
+		return
+	if not _weapon_upgrade_levels.has(weapon_id):
+		_weapon_upgrade_levels[weapon_id] = {}
+	if not _weapon_upgrade_order.has(weapon_id):
+		_weapon_upgrade_order[weapon_id] = []
+
+	var levels := _weapon_upgrade_levels[weapon_id] as Dictionary
+	levels[upgrade_type_key] = int(levels.get(upgrade_type_key, 0)) + 1
+	_weapon_upgrade_levels[weapon_id] = levels
+
+	var order := _weapon_upgrade_order[weapon_id] as Array
+	if not order.has(upgrade_type_key):
+		order.append(upgrade_type_key)
+	_weapon_upgrade_order[weapon_id] = order
+
+	if upgrade_history_panel.visible and _selected_history_weapon_id == weapon_id:
+		_refresh_upgrade_history_records()
 
 func _update_health_text() -> void:
 	var player_controller := player as PlayerController
@@ -945,7 +1051,9 @@ func _icon_for_upgrade_option(option: Dictionary) -> String:
 	var option_type := StringName(String(option.get("type", "")))
 	if option_type == OPTION_UNLOCK_WEAPON:
 		return "✚"
-	var upgrade_type := StringName(String(option.get("upgrade_type", "")))
+	return _icon_for_upgrade_type(StringName(String(option.get("upgrade_type", ""))))
+
+func _icon_for_upgrade_type(upgrade_type: StringName) -> String:
 	match upgrade_type:
 		UPGRADE_DAMAGE:
 			return "✹"
@@ -987,6 +1095,64 @@ func _icon_for_upgrade_option(option: Dictionary) -> String:
 			return "☍"
 		UPGRADE_SUMMON_IMPLOSION:
 			return "✺"
+	return "◆"
+
+func _upgrade_name_for_type(upgrade_type: StringName) -> String:
+	match upgrade_type:
+		UPGRADE_DAMAGE:
+			return "伤害提升"
+		UPGRADE_FIRE_RATE:
+			return "射速提升"
+		UPGRADE_PROJECTILE_COUNT:
+			return "子弹增加"
+		UPGRADE_HIT_RADIUS:
+			return "命中范围"
+		UPGRADE_PIERCE:
+			return "穿透强化"
+		UPGRADE_SPLIT:
+			return "分裂弹头"
+		UPGRADE_EXPLOSION:
+			return "爆炸弹头"
+		UPGRADE_PULSE_OVERLOAD:
+			return "脉冲过载"
+		UPGRADE_SCATTER_BARRAGE:
+			return "霰弹压制"
+		UPGRADE_ARC_FOCUS:
+			return "弧光聚焦"
+		UPGRADE_LASER_WIDTH:
+			return "激光宽度"
+		UPGRADE_LASER_DURATION:
+			return "激光持续"
+		UPGRADE_LASER_CHAIN:
+			return "连锁折射"
+		UPGRADE_LASER_CHAIN_RANGE:
+			return "连锁距离"
+		UPGRADE_LASER_BURN:
+			return "灼烧回路"
+		UPGRADE_SUMMON_RADIUS:
+			return "黑洞范围"
+		UPGRADE_SUMMON_DURATION:
+			return "黑洞持续"
+		UPGRADE_SUMMON_TICK_RATE:
+			return "脉冲频率"
+		UPGRADE_SUMMON_EXTRA_FIELD:
+			return "额外黑洞"
+		UPGRADE_SUMMON_IMPLOSION:
+			return "塌缩爆发"
+	return String(upgrade_type)
+
+func _icon_for_weapon(weapon_id: String) -> String:
+	match weapon_id:
+		"pulse":
+			return "◈"
+		"laser":
+			return "║"
+		"blackhole":
+			return "◉"
+		"scatter":
+			return "✸"
+		"arc":
+			return "⌁"
 	return "◆"
 
 func _build_unlock_options() -> Array[Dictionary]:
@@ -1332,7 +1498,9 @@ func _apply_upgrade(option: Dictionary) -> void:
 		OPTION_UNLOCK_WEAPON:
 			_unlock_weapon(weapon_id)
 		OPTION_WEAPON_UPGRADE:
-			_apply_weapon_upgrade(weapon_id, StringName(String(option.get("upgrade_type", ""))))
+			var upgrade_type := StringName(String(option.get("upgrade_type", "")))
+			_apply_weapon_upgrade(weapon_id, upgrade_type)
+			_record_weapon_upgrade(weapon_id, upgrade_type)
 
 func _apply_weapon_upgrade(weapon_id: String, upgrade_type: StringName) -> void:
 	if not _weapon_pool.has(weapon_id):
