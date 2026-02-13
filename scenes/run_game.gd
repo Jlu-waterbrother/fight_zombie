@@ -59,12 +59,12 @@ const UPGRADE_SUMMON_IMPLOSION: StringName = &"summon_implosion"
 @onready var enemy_container: Node2D = $EnemyContainer
 @onready var bullet_container: Node2D = $BulletContainer
 @onready var summon_container: Node2D = $SummonContainer
-@onready var health_label: Label = $UILayer/HealthLabel
-@onready var kill_label: Label = $UILayer/KillLabel
-@onready var wave_label: Label = $UILayer/WaveLabel
-@onready var level_label: Label = $UILayer/LevelLabel
-@onready var exp_label: Label = $UILayer/ExpLabel
-@onready var weapon_label: Label = $UILayer/WeaponLabel
+@onready var health_label: Label = $UILayer/StatusPanel/MarginContainer/StatusVBox/HealthLabel
+@onready var kill_label: Label = $UILayer/StatusPanel/MarginContainer/StatusVBox/KillLabel
+@onready var wave_label: Label = $UILayer/StatusPanel/MarginContainer/StatusVBox/WaveLabel
+@onready var level_label: Label = $UILayer/StatusPanel/MarginContainer/StatusVBox/LevelLabel
+@onready var exp_label: Label = $UILayer/StatusPanel/MarginContainer/StatusVBox/ExpLabel
+@onready var weapon_label: Label = $UILayer/StatusPanel/MarginContainer/StatusVBox/WeaponLabel
 @onready var upgrade_history_button: Button = $UILayer/UpgradeHistoryButton
 @onready var upgrade_history_panel: PanelContainer = $UILayer/UpgradeHistoryPanel
 @onready var upgrade_history_tab_row: HBoxContainer = $UILayer/UpgradeHistoryPanel/VBoxContainer/WeaponTabRow
@@ -449,6 +449,8 @@ func _unlock_weapon(weapon_id: String) -> void:
 	if not _weapon_upgrade_order.has(weapon_id):
 		_weapon_upgrade_order[weapon_id] = []
 	_refresh_upgrade_history_tabs()
+	if upgrade_history_panel.visible:
+		_refresh_upgrade_history_records()
 
 func _tick_weapon(delta: float, weapon_id: String) -> void:
 	if not _weapon_pool.has(weapon_id):
