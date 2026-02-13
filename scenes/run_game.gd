@@ -618,9 +618,17 @@ func _projectile_display_profile_for_weapon(weapon_id: String, is_split_child: b
 		"rotation_offset_degrees": 90.0,
 		"scale": 1.0,
 		"trail_enabled": false,
+		"trail_color": Color(1.0, 0.95, 0.6, 0.45),
+		"trail_amount": 8,
+		"trail_lifetime": 0.16,
+		"trail_scale": 0.55,
 		"color": Color(1.0, 0.9, 0.2, 1.0),
 		"impact_color": Color(1.0, 0.92, 0.35, 0.9),
 		"despawn_color": Color(0.8, 0.82, 0.9, 0.72),
+		"impact_effect_scale": 1.0,
+		"despawn_effect_scale": 0.7,
+		"impact_effect_shape": PackedVector2Array([Vector2(-4,0),Vector2(0,-4), Vector2(4,0),Vector2(0,4)]),
+		"despawn_effect_shape": PackedVector2Array([Vector2(-3,0),Vector2(0,-3), Vector2(3,0),Vector2(0,3)]),
 		"shape_points": PackedVector2Array([Vector2(0,-6),Vector2(4,3), Vector2(0,6),Vector2(-4, 3)]),
 	}
 	match weapon_id:
@@ -628,23 +636,44 @@ func _projectile_display_profile_for_weapon(weapon_id: String, is_split_child: b
 			profile["color"] = Color(1.0, 0.95, 0.32, 1.0)
 			profile["impact_color"] = Color(1.0, 0.9, 0.3, 0.95)
 			profile["shape_points"] = PackedVector2Array([Vector2(0,-6),Vector2(5,0), Vector2(0,6),Vector2(-5, 0)])
+			profile["trail_enabled"] = true
+			profile["trail_color"] = Color(1.0, 0.9, 0.35, 0.46)
+			profile["trail_amount"] = 9
+			profile["trail_lifetime"] = 0.14
+			profile["trail_scale"] = 0.52
+			profile["impact_effect_scale"] = 1.15
+			profile["impact_effect_shape"] = PackedVector2Array([Vector2(0,-8),Vector2(3,-3), Vector2(8,0),Vector2(3,3), Vector2(0,8),Vector2(-3,3), Vector2(-8,0),Vector2(-3,-3)])
 		"scatter":
 			profile["color"] = Color(1.0, 0.66, 0.28, 1.0)
 			profile["impact_color"] = Color(1.0, 0.74, 0.32, 0.95)
 			profile["shape_points"] = PackedVector2Array([Vector2(-5,-3),Vector2(5,-3), Vector2(5,3),Vector2(-5,3)])
 			profile["rotation_follows_direction"] = false
+			profile["impact_effect_scale"] = 0.9
+			profile["despawn_effect_scale"] = 0.65
+			profile["impact_effect_shape"] = PackedVector2Array([Vector2(-8,-1),Vector2(8,-1), Vector2(8,1),Vector2(-8,1)])
+			profile["despawn_effect_shape"] = PackedVector2Array([Vector2(-6,-2),Vector2(0,-1), Vector2(6,-2),Vector2(2,0), Vector2(6,2),Vector2(0,1), Vector2(-6,2),Vector2(-2,0)])
 		"arc":
 			profile["color"] = Color(0.46, 0.95, 1.0, 1.0)
 			profile["impact_color"] = Color(0.56, 0.92, 1.0, 0.95)
 			profile["despawn_color"] = Color(0.42, 0.8, 1.0, 0.7)
 			profile["shape_points"] = PackedVector2Array([Vector2(0,7),Vector2(5,5), Vector2(-5,5)])
 			profile["trail_enabled"] = true
+			profile["trail_color"] = Color(0.62, 0.98, 1.0, 0.62)
+			profile["trail_amount"] = 16
+			profile["trail_lifetime"] = 0.2
+			profile["trail_scale"] = 0.8
+			profile["impact_effect_scale"] = 1.25
+			profile["despawn_effect_scale"] = 0.88
+			profile["impact_effect_shape"] = PackedVector2Array([Vector2(-2,-8),Vector2(2,-3), Vector2(0,-1),Vector2(5,4), Vector2(1,3),Vector2(-1,8), Vector2(-4,3),Vector2(-1,2)])
+			profile["despawn_effect_shape"] = PackedVector2Array([Vector2(0,-6),Vector2(4,-1), Vector2(2,4),Vector2(-2,4), Vector2(-4,-1)])
 		_:
 			pass
 
 	if is_split_child:
 		profile["scale"] = 0.78
 		profile["trail_enabled"] = false
+		profile["impact_effect_scale"] = float(profile.get("impact_effect_scale", 1.0)) * 0.72
+		profile["despawn_effect_scale"] = float(profile.get("despawn_effect_scale", 0.7)) * 0.68
 	return profile
 
 func _try_fire_laser_chains(first_target: EnemyBase, weapon: Dictionary, base_damage: float) -> void:
