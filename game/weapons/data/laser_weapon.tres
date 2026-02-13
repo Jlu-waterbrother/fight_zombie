@@ -12,6 +12,6 @@ fire_interval_min = 0.08
 projectile_count = 1
 spread_degrees = 0.0
 hit_radius = 18.0
-damage = 16.0
+damage = 18.0
 laser_width = 4.0
 laser_duration = 0.08

@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://game/enemies/scenes/enemy_base.tscn" id="1"]
+[ext_resource type="Script" path="res://game/enemies/scripts/enemy_weaver.gd" id="2"]
+
+[node name="ZombieWeaver" instance=ExtResource("1")]
+script = ExtResource("2")
+modulate = Color(0.62, 1, 0.78, 1)
+move_speed = 105.0
+attack_interval = 0.82
+attack_damage = 10.0
+weave_amplitude = 88.0
+weave_frequency = 2.6
+horizontal_adjust_speed = 4.4

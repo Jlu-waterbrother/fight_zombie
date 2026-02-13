@@ -12,4 +12,4 @@ fire_interval_min = 0.12
 projectile_count = 2
 spread_degrees = 12.0
 hit_radius = 14.0
-damage = 14.0
+damage = 15.0

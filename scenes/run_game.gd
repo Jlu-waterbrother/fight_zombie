@@ -37,13 +37,13 @@ const UPGRADE_SUMMON_EXTRA_FIELD: StringName = &"summon_extra_field"
 const UPGRADE_SUMMON_IMPLOSION: StringName = &"summon_implosion"
 
 @export var enemy_spawn_interval := 1.2
-@export var enemy_contact_damage := 25.0
+@export var enemy_contact_damage := 20.0
 @export var enemy_contact_radius := 28.0
 @export var total_waves := 3
 @export var enemies_per_wave_base := 8
 @export var enemies_per_wave_growth := 4
 @export var enemy_base_max_health := 60.0
-@export var enemy_health_growth_per_wave := 0.15
+@export var enemy_health_growth_per_wave := 0.12
 @export var inter_wave_delay := 1.8
 @export var wave_table: WaveTable = DEFAULT_WAVE_TABLE
 @export var max_equipped_weapons := 3
@@ -51,9 +51,9 @@ const UPGRADE_SUMMON_IMPLOSION: StringName = &"summon_implosion"
 @export var projectile_despawn_margin := 40.0
 @export var base_settlement_gold := 20
 @export var kill_gold_bonus := 1
-@export var exp_per_kill := 10
+@export var exp_per_kill := 12
 @export var exp_to_level_base := 40
-@export var exp_to_level_growth := 1.35
+@export var exp_to_level_growth := 1.32
 
 @onready var player: CharacterBody2D = $Player
 @onready var enemy_container: Node2D = $EnemyContainer
@@ -73,7 +73,7 @@ const UPGRADE_SUMMON_IMPLOSION: StringName = &"summon_implosion"
 @onready var victory_restart_button: Button = $UILayer/VictoryPanel/VBoxContainer/VictoryRestartButton
 @onready var victory_back_to_menu_button: Button = $UILayer/VictoryPanel/VBoxContainer/VictoryBackToMenuButton
 @onready var upgrade_panel: PanelContainer = $UILayer/UpgradePanel
-@onready var upgrade_button_container: VBoxContainer = $UILayer/UpgradePanel/VBoxContainer
+@onready var upgrade_button_container: HBoxContainer = $UILayer/UpgradePanel/VBoxContainer/OptionRow
 
 var _spawn_cooldown := 0.0
 var _inter_wave_cooldown := 0.0
@@ -87,6 +87,7 @@ var _pending_level_ups := 0
 var _is_upgrade_open := false
 var _upgrade_options: Array[Dictionary] = []
 var _upgrade_buttons: Array[Button] = []
+var _upgrade_card_views: Array[Dictionary] = []
 var _weapon_pool: Dictionary = {}
 var _weapon_order: Array[String] = []
 var _equipped_weapon_ids: Array[String] = []
@@ -160,23 +161,63 @@ func _process(delta: float) -> void:
 
 func _setup_upgrade_buttons() -> void:
 	_upgrade_buttons.clear()
+	_upgrade_card_views.clear()
 	for child in upgrade_button_container.get_children():
-		var button := child as Button
-		if button == null:
-			continue
-		_upgrade_buttons.append(button)
+		child.queue_free()
 
-	while _upgrade_buttons.size() < UPGRADE_OPTION_COUNT:
-		var extra_button := Button.new()
-		extra_button.custom_minimum_size = Vector2(0.0, 42.0)
-		extra_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		upgrade_button_container.add_child(extra_button)
-		_upgrade_buttons.append(extra_button)
-
-	for index in _upgrade_buttons.size():
-		var option_button := _upgrade_buttons[index]
-		option_button.custom_minimum_size = Vector2(0.0, 42.0)
+	for index in UPGRADE_OPTION_COUNT:
+		var option_button := Button.new()
+		option_button.flat = false
+		option_button.text = ""
+		option_button.focus_mode = Control.FOCUS_NONE
+		option_button.custom_minimum_size = Vector2(190.0, 228.0)
+		option_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		option_button.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		option_button.pressed.connect(_on_pick_upgrade.bind(index))
+		upgrade_button_container.add_child(option_button)
+		_upgrade_buttons.append(option_button)
+
+		var margin := MarginContainer.new()
+		margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+		margin.offset_left = 10.0
+		margin.offset_top = 10.0
+		margin.offset_right = -10.0
+		margin.offset_bottom = -10.0
+		margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		option_button.add_child(margin)
+
+		var card_vbox := VBoxContainer.new()
+		card_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		card_vbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		margin.add_child(card_vbox)
+
+		var title_label := Label.new()
+		title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card_vbox.add_child(title_label)
+
+		var icon_label := Label.new()
+		icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		icon_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		icon_label.add_theme_font_size_override("font_size", 30)
+		icon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card_vbox.add_child(icon_label)
+
+		var effect_label := Label.new()
+		effect_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		effect_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		effect_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		effect_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card_vbox.add_child(effect_label)
+
+		_upgrade_card_views.append({
+			"title": title_label,
+			"icon": icon_label,
+			"effect": effect_label,
+		})
 
 func _start_wave(wave_index: int) -> void:
 	_current_wave_index = wave_index
@@ -811,9 +852,20 @@ func _refresh_upgrade_options() -> void:
 		var option_button := _upgrade_buttons[index]
 		if index < _upgrade_options.size():
 			var option := _upgrade_options[index]
+			var display := _build_upgrade_option_display(option)
+			var card_view := _upgrade_card_views[index]
+			var title_label := card_view.get("title", null) as Label
+			var icon_label := card_view.get("icon", null) as Label
+			var effect_label := card_view.get("effect", null) as Label
+			if title_label != null:
+				title_label.text = String(display.get("title", "强化"))
+			if icon_label != null:
+				icon_label.text = String(display.get("icon", "◆"))
+			if effect_label != null:
+				effect_label.text = String(display.get("effect", ""))
 			option_button.visible = true
 			option_button.disabled = false
-			option_button.text = String(option.get("label", "强化武器"))
+			option_button.tooltip_text = String(option.get("label", "强化武器"))
 		else:
 			option_button.visible = false
 			option_button.disabled = true
@@ -873,6 +925,69 @@ func _append_unique_upgrade_options(picked: Array[Dictionary], used_keys: Dictio
 			continue
 		used_keys[option_key] = true
 		picked.append(option)
+
+func _build_upgrade_option_display(option: Dictionary) -> Dictionary:
+	var raw_label := String(option.get("label", "强化武器"))
+	var lines := raw_label.split("\n", false)
+	var title := raw_label
+	var effect := ""
+	if not lines.is_empty():
+		title = lines[0]
+		if lines.size() > 1:
+			effect = lines[1]
+	return {
+		"title": title,
+		"icon": _icon_for_upgrade_option(option),
+		"effect": effect,
+	}
+
+func _icon_for_upgrade_option(option: Dictionary) -> String:
+	var option_type := StringName(String(option.get("type", "")))
+	if option_type == OPTION_UNLOCK_WEAPON:
+		return "✚"
+	var upgrade_type := StringName(String(option.get("upgrade_type", "")))
+	match upgrade_type:
+		UPGRADE_DAMAGE:
+			return "✹"
+		UPGRADE_FIRE_RATE:
+			return "⚡"
+		UPGRADE_PROJECTILE_COUNT:
+			return "◉"
+		UPGRADE_HIT_RADIUS:
+			return "◎"
+		UPGRADE_PIERCE:
+			return "➤"
+		UPGRADE_SPLIT:
+			return "✶"
+		UPGRADE_EXPLOSION:
+			return "✸"
+		UPGRADE_PULSE_OVERLOAD:
+			return "⬡"
+		UPGRADE_SCATTER_BARRAGE:
+			return "⬢"
+		UPGRADE_ARC_FOCUS:
+			return "⬣"
+		UPGRADE_LASER_WIDTH:
+			return "║"
+		UPGRADE_LASER_DURATION:
+			return "⏳"
+		UPGRADE_LASER_CHAIN:
+			return "⌁"
+		UPGRADE_LASER_CHAIN_RANGE:
+			return "↔"
+		UPGRADE_LASER_BURN:
+			return "♨"
+		UPGRADE_SUMMON_RADIUS:
+			return "◌"
+		UPGRADE_SUMMON_DURATION:
+			return "◍"
+		UPGRADE_SUMMON_TICK_RATE:
+			return "⟲"
+		UPGRADE_SUMMON_EXTRA_FIELD:
+			return "☍"
+		UPGRADE_SUMMON_IMPLOSION:
+			return "✺"
+	return "◆"
 
 func _build_unlock_options() -> Array[Dictionary]:
 	var options: Array[Dictionary] = []

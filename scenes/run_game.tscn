@@ -102,22 +102,21 @@ text = "返回主菜单"
 
 [node name="UpgradePanel" type="PanelContainer" parent="UILayer"]
 visible = false
-offset_left = 170.0
-offset_top = 90.0
-offset_right = 630.0
-offset_bottom = 430.0
+offset_left = 70.0
+offset_top = 86.0
+offset_right = 730.0
+offset_bottom = 446.0
 
 [node name="VBoxContainer" type="VBoxContainer" parent="UILayer/UpgradePanel"]
+theme_override_constants/separation = 10
 
 [node name="TitleLabel" type="Label" parent="UILayer/UpgradePanel/VBoxContainer"]
 text = "升级！请选择一项强化（3选1）"
 horizontal_alignment = 1
 
-[node name="FireRateButton" type="Button" parent="UILayer/UpgradePanel/VBoxContainer"]
-text = "升级选项 A"
-
-[node name="HitRadiusButton" type="Button" parent="UILayer/UpgradePanel/VBoxContainer"]
-text = "升级选项 B"
+[node name="OptionRow" type="HBoxContainer" parent="UILayer/UpgradePanel/VBoxContainer"]
+size_flags_vertical = 3
+theme_override_constants/separation = 10
 
 [node name="WaveDirector" type="Node" parent="."]
 script = ExtResource("2")

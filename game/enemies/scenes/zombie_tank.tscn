@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://game/enemies/scenes/enemy_base.tscn" id="1"]
+
+[node name="ZombieTank" instance=ExtResource("1")]
+modulate = Color(0.72, 0.88, 1, 1)
+scale = Vector2(1.25, 1.25)
+move_speed = 72.0
+attack_interval = 1.15
+attack_damage = 14.0

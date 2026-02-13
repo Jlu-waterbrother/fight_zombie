@@ -1,0 +1,14 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="PackedScene" path="res://game/enemies/scenes/enemy_base.tscn" id="1"]
+[ext_resource type="Script" path="res://game/enemies/scripts/enemy_berserker.gd" id="2"]
+
+[node name="ZombieBerserker" instance=ExtResource("1")]
+script = ExtResource("2")
+modulate = Color(1, 0.84, 0.7, 1)
+move_speed = 118.0
+attack_interval = 0.95
+attack_damage = 11.0
+frenzy_health_ratio = 0.45
+frenzy_speed_multiplier = 1.65
+frenzy_attack_interval_multiplier = 0.74
