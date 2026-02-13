@@ -11,9 +11,30 @@ const DEFAULT_WEAPON_RESOURCES: Array[WeaponEntry] = [
 	preload("res://game/weapons/data/scatter_weapon.tres"),
 	preload("res://game/weapons/data/arc_weapon.tres"),
 ]
-const UPGRADE_UNLOCK_WEAPON := 1
-const UPGRADE_FIRE_RATE := 2
-const UPGRADE_HIT_RADIUS := 3
+const UPGRADE_OPTION_COUNT := 3
+const PREFERRED_WEAPON_COUNT := 3
+const OPTION_UNLOCK_WEAPON: StringName = &"unlock_weapon"
+const OPTION_WEAPON_UPGRADE: StringName = &"weapon_upgrade"
+const UPGRADE_DAMAGE: StringName = &"damage"
+const UPGRADE_FIRE_RATE: StringName = &"fire_rate"
+const UPGRADE_PROJECTILE_COUNT: StringName = &"projectile_count"
+const UPGRADE_HIT_RADIUS: StringName = &"hit_radius"
+const UPGRADE_PIERCE: StringName = &"pierce"
+const UPGRADE_SPLIT: StringName = &"split"
+const UPGRADE_EXPLOSION: StringName = &"explosion"
+const UPGRADE_PULSE_OVERLOAD: StringName = &"pulse_overload"
+const UPGRADE_SCATTER_BARRAGE: StringName = &"scatter_barrage"
+const UPGRADE_ARC_FOCUS: StringName = &"arc_focus"
+const UPGRADE_LASER_WIDTH: StringName = &"laser_width"
+const UPGRADE_LASER_DURATION: StringName = &"laser_duration"
+const UPGRADE_LASER_CHAIN: StringName = &"laser_chain"
+const UPGRADE_LASER_CHAIN_RANGE: StringName = &"laser_chain_range"
+const UPGRADE_LASER_BURN: StringName = &"laser_burn"
+const UPGRADE_SUMMON_RADIUS: StringName = &"summon_radius"
+const UPGRADE_SUMMON_DURATION: StringName = &"summon_duration"
+const UPGRADE_SUMMON_TICK_RATE: StringName = &"summon_tick_rate"
+const UPGRADE_SUMMON_EXTRA_FIELD: StringName = &"summon_extra_field"
+const UPGRADE_SUMMON_IMPLOSION: StringName = &"summon_implosion"
 
 @export var enemy_spawn_interval := 1.2
 @export var enemy_contact_damage := 25.0
@@ -52,8 +73,7 @@ const UPGRADE_HIT_RADIUS := 3
 @onready var victory_restart_button: Button = $UILayer/VictoryPanel/VBoxContainer/VictoryRestartButton
 @onready var victory_back_to_menu_button: Button = $UILayer/VictoryPanel/VBoxContainer/VictoryBackToMenuButton
 @onready var upgrade_panel: PanelContainer = $UILayer/UpgradePanel
-@onready var fire_rate_button: Button = $UILayer/UpgradePanel/VBoxContainer/FireRateButton
-@onready var hit_radius_button: Button = $UILayer/UpgradePanel/VBoxContainer/HitRadiusButton
+@onready var upgrade_button_container: VBoxContainer = $UILayer/UpgradePanel/VBoxContainer
 
 var _spawn_cooldown := 0.0
 var _inter_wave_cooldown := 0.0
@@ -65,8 +85,8 @@ var _current_exp := 0
 var _next_level_exp := 40
 var _pending_level_ups := 0
 var _is_upgrade_open := false
-var _option_a: Dictionary = {}
-var _option_b: Dictionary = {}
+var _upgrade_options: Array[Dictionary] = []
+var _upgrade_buttons: Array[Button] = []
 var _weapon_pool: Dictionary = {}
 var _weapon_order: Array[String] = []
 var _equipped_weapon_ids: Array[String] = []
@@ -94,8 +114,7 @@ func _ready() -> void:
 	back_to_menu_button.pressed.connect(_on_back_to_menu_pressed)
 	victory_restart_button.pressed.connect(_on_restart_pressed)
 	victory_back_to_menu_button.pressed.connect(_on_back_to_menu_pressed)
-	fire_rate_button.pressed.connect(_on_pick_option_a_upgrade)
-	hit_radius_button.pressed.connect(_on_pick_option_b_upgrade)
+	_setup_upgrade_buttons()
 	_init_weapon_pool()
 	_apply_run_modifiers_from_state()
 	if not _weapon_order.is_empty():
@@ -138,6 +157,26 @@ func _process(delta: float) -> void:
 	_update_progression_text()
 	_update_weapon_text()
 	_try_open_upgrade_panel()
+
+func _setup_upgrade_buttons() -> void:
+	_upgrade_buttons.clear()
+	for child in upgrade_button_container.get_children():
+		var button := child as Button
+		if button == null:
+			continue
+		_upgrade_buttons.append(button)
+
+	while _upgrade_buttons.size() < UPGRADE_OPTION_COUNT:
+		var extra_button := Button.new()
+		extra_button.custom_minimum_size = Vector2(0.0, 42.0)
+		extra_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		upgrade_button_container.add_child(extra_button)
+		_upgrade_buttons.append(extra_button)
+
+	for index in _upgrade_buttons.size():
+		var option_button := _upgrade_buttons[index]
+		option_button.custom_minimum_size = Vector2(0.0, 42.0)
+		option_button.pressed.connect(_on_pick_upgrade.bind(index))
 
 func _start_wave(wave_index: int) -> void:
 	_current_wave_index = wave_index
@@ -321,11 +360,25 @@ func _init_weapon_pool() -> void:
 			"spread_degrees": float(entry.spread_degrees),
 			"hit_radius": float(entry.hit_radius),
 			"damage": float(entry.damage),
+			"projectile_penetration": 0,
+			"split_count": 0,
+			"split_damage_ratio": 0.52,
+			"explosion_radius": 0.0,
+			"explosion_damage_ratio": 0.0,
 			"laser_width": float(entry.laser_width),
 			"laser_duration": float(entry.laser_duration),
+			"laser_chain_count": 0,
+			"laser_chain_range": 150.0,
+			"laser_chain_falloff": 0.72,
+			"laser_burn_damage": 0.0,
+			"laser_burn_ticks": 0,
+			"laser_burn_interval": 0.22,
 			"summon_duration": float(entry.summon_duration),
 			"summon_tick_interval": float(entry.summon_tick_interval),
 			"summon_radius": float(entry.summon_radius),
+			"summon_extra_fields": 0,
+			"summon_explode_damage_ratio": 0.0,
+			"summon_explode_radius_bonus": 0.0,
 		}
 		_weapon_pool[weapon.id] = weapon
 		_weapon_order.append(weapon.id)
@@ -397,12 +450,24 @@ func _spawn_black_hole(weapon: Dictionary, target_enemy: EnemyBase, damage: floa
 	if target_enemy != null and is_instance_valid(target_enemy):
 		spawn_position = target_enemy.global_position
 
+	var field_count := 1 + int(weapon.get("summon_extra_fields", 0))
+	var orbit_radius := maxf(18.0, float(weapon.summon_radius) * 0.38)
+	for index in field_count:
+		var field_pos := spawn_position
+		if index > 0:
+			var angle := TAU * float(index - 1) / float(max(1, field_count - 1))
+			field_pos += Vector2.RIGHT.rotated(angle) * orbit_radius
+		_spawn_black_hole_field(weapon, field_pos, damage)
+
+func _spawn_black_hole_field(weapon: Dictionary, position: Vector2, damage: float) -> void:
 	var source_weapon_id := StringName(String(weapon.id))
 	var info := DamageInfo.from_values(damage, &"summon", source_weapon_id)
-
 	var field := AOE_FIELD_SCENE.instantiate() as AOEFieldRuntime
-	field.global_position = spawn_position
+	field.global_position = position
 	field.configure(float(weapon.summon_radius), float(weapon.summon_tick_interval), float(weapon.summon_duration), info)
+	field.set_meta("burst_damage", damage * float(weapon.get("summon_explode_damage_ratio", 0.0)))
+	field.set_meta("burst_radius", float(weapon.summon_radius) + float(weapon.get("summon_explode_radius_bonus", 0.0)))
+	field.set_meta("source_weapon_id", String(source_weapon_id))
 	field.pulse_damage.connect(_on_summon_pulse_damage)
 	field.expired.connect(_on_summon_expired)
 	summon_container.add_child(field)
@@ -421,6 +486,11 @@ func _on_summon_expired(field: AOEFieldRuntime) -> void:
 		return
 	if not is_instance_valid(field):
 		return
+	var burst_damage := float(field.get_meta("burst_damage", 0.0))
+	if burst_damage > 0.0:
+		var burst_radius := maxf(10.0, float(field.get_meta("burst_radius", 0.0)))
+		var source_weapon_id := StringName(String(field.get_meta("source_weapon_id", "")))
+		_apply_area_damage(field.global_position, burst_radius, burst_damage, &"summon", source_weapon_id)
 	field.queue_free()
 
 func _fire_laser_weapon(weapon: Dictionary, target_enemy: EnemyBase, damage: float) -> void:
@@ -432,6 +502,8 @@ func _fire_laser_weapon(weapon: Dictionary, target_enemy: EnemyBase, damage: flo
 	var source_weapon_id := StringName(String(weapon.id))
 	var damage_info := DamageInfo.from_values(damage, &"laser", source_weapon_id)
 	_apply_damage_to_enemy(target_enemy, damage_info)
+	_try_apply_laser_burn(target_enemy, weapon)
+	_try_fire_laser_chains(target_enemy, weapon, damage)
 
 	var laser_width := maxf(1.0, float(weapon.laser_width))
 	var laser_duration := maxf(0.03, float(weapon.laser_duration))
@@ -451,15 +523,106 @@ func _spawn_laser_line(start_pos: Vector2, end_pos: Vector2, width: float, durat
 	tween.tween_property(line, "modulate:a", 0.0, duration)
 	tween.finished.connect(line.queue_free)
 
-func _spawn_projectile(direction: Vector2, hit_radius: float, damage: float, target_enemy: EnemyBase, weapon_id: String) -> void:
+func _spawn_projectile(direction: Vector2, hit_radius: float, damage: float, target_enemy: EnemyBase, weapon_id: String, spawn_position: Vector2 = Vector2.INF, can_split: bool = true, penetration_override: int = -1) -> void:
 	var bullet := BULLET_SCENE.instantiate() as ProjectileRuntime
-	bullet.global_position = player.global_position
+	if spawn_position == Vector2.INF:
+		bullet.global_position = player.global_position
+	else:
+		bullet.global_position = spawn_position
 	bullet.direction = direction.normalized()
 	bullet.target_enemy = target_enemy
 	bullet.set_meta("hit_radius", hit_radius)
 	bullet.set_meta("damage", damage)
 	bullet.set_meta("weapon_id", weapon_id)
+	var weapon: Dictionary = _weapon_pool.get(weapon_id, {})
+	var penetration := int(weapon.get("projectile_penetration", 0))
+	if penetration_override >= 0:
+		penetration = penetration_override
+	bullet.set_meta("penetrations_left", penetration)
+	bullet.set_meta("split_count", int(weapon.get("split_count", 0)))
+	bullet.set_meta("split_damage_ratio", float(weapon.get("split_damage_ratio", 0.52)))
+	bullet.set_meta("explosion_radius", float(weapon.get("explosion_radius", 0.0)))
+	bullet.set_meta("explosion_damage_ratio", float(weapon.get("explosion_damage_ratio", 0.0)))
+	bullet.set_meta("can_split", can_split)
+	bullet.set_meta("hit_enemy_ids", PackedInt64Array())
 	bullet_container.add_child(bullet)
+
+func _try_fire_laser_chains(first_target: EnemyBase, weapon: Dictionary, base_damage: float) -> void:
+	var chain_count := int(weapon.get("laser_chain_count", 0))
+	if chain_count <= 0:
+		return
+	var chain_range := maxf(30.0, float(weapon.get("laser_chain_range", 150.0)))
+	var falloff := clampf(float(weapon.get("laser_chain_falloff", 0.72)), 0.2, 0.95)
+	var source_weapon_id := StringName(String(weapon.id))
+	var current_enemy := first_target
+	var chain_damage := base_damage * falloff
+	var ignored_ids: Dictionary = {first_target.get_instance_id(): true}
+
+	for _index in chain_count:
+		if chain_damage <= 0.2:
+			return
+		var next_enemy := _find_nearest_enemy_to_point(current_enemy.global_position, chain_range, ignored_ids)
+		if next_enemy == null:
+			return
+		var chain_info := DamageInfo.from_values(chain_damage, &"laser", source_weapon_id)
+		_apply_damage_to_enemy(next_enemy, chain_info)
+		_try_apply_laser_burn(next_enemy, weapon)
+		_spawn_laser_line(current_enemy.global_position, next_enemy.global_position, maxf(1.0, float(weapon.laser_width) * 0.75), maxf(0.02, float(weapon.laser_duration) * 0.9))
+		ignored_ids[next_enemy.get_instance_id()] = true
+		current_enemy = next_enemy
+		chain_damage *= falloff
+
+func _try_apply_laser_burn(target_enemy: EnemyBase, weapon: Dictionary) -> void:
+	var burn_damage := float(weapon.get("laser_burn_damage", 0.0))
+	var burn_ticks := int(weapon.get("laser_burn_ticks", 0))
+	if burn_damage <= 0.0 or burn_ticks <= 0:
+		return
+	_apply_laser_burn_tick(target_enemy, burn_damage, burn_ticks, maxf(0.05, float(weapon.get("laser_burn_interval", 0.22))), StringName(String(weapon.id)))
+
+func _apply_laser_burn_tick(target_enemy: EnemyBase, burn_damage: float, ticks_left: int, interval: float, source_weapon_id: StringName) -> void:
+	if ticks_left <= 0:
+		return
+	var timer := get_tree().create_timer(interval)
+	timer.timeout.connect(func() -> void:
+		if _is_run_over or GameState.is_paused:
+			return
+		if target_enemy == null or not is_instance_valid(target_enemy) or target_enemy.is_defeated():
+			return
+		var burn_info := DamageInfo.from_values(burn_damage, &"laser", source_weapon_id)
+		_apply_damage_to_enemy(target_enemy, burn_info)
+		_apply_laser_burn_tick(target_enemy, burn_damage, ticks_left - 1, interval, source_weapon_id)
+	)
+
+func _find_nearest_enemy_to_point(origin: Vector2, max_distance: float, ignored_ids: Dictionary = {}) -> EnemyBase:
+	var nearest_enemy: EnemyBase = null
+	var nearest_distance := max_distance
+	for child in enemy_container.get_children():
+		var enemy := child as EnemyBase
+		if enemy == null:
+			continue
+		var enemy_id := enemy.get_instance_id()
+		if ignored_ids.has(enemy_id):
+			continue
+		var distance := enemy.global_position.distance_to(origin)
+		if distance > nearest_distance:
+			continue
+		nearest_distance = distance
+		nearest_enemy = enemy
+	return nearest_enemy
+
+func _apply_area_damage(center: Vector2, radius: float, damage: float, source_kind: StringName, source_weapon_id: StringName) -> void:
+	if damage <= 0.0:
+		return
+	if radius <= 0.0:
+		return
+	var info := DamageInfo.from_values(damage, source_kind, source_weapon_id)
+	for child in enemy_container.get_children():
+		var enemy := child as EnemyBase
+		if enemy == null:
+			continue
+		if enemy.global_position.distance_to(center) > radius:
+			continue
+		_apply_damage_to_enemy(enemy, info)
 
 func _update_projectile_state() -> void:
 	var viewport_size := get_viewport_rect().size
@@ -473,13 +636,19 @@ func _update_projectile_state() -> void:
 			continue
 
 		var hit_radius := float(bullet.get_meta("hit_radius", 18.0))
-		var hit_enemy := _find_hit_enemy(bullet.global_position, hit_radius)
+		var hit_enemy := _find_hit_enemy_for_bullet(bullet, hit_radius)
 		if hit_enemy != null:
 			var damage := float(bullet.get_meta("damage", 1.0))
 			var source_weapon_id := StringName(String(bullet.get_meta("weapon_id", "")))
 			var damage_info := DamageInfo.from_values(damage, &"projectile", source_weapon_id)
 			_apply_damage_to_enemy(hit_enemy, damage_info)
-			bullet.queue_free()
+			_record_bullet_hit_enemy(bullet, hit_enemy)
+			_trigger_projectile_special_effects(bullet, hit_enemy, damage, source_weapon_id)
+			var penetrations_left := int(bullet.get_meta("penetrations_left", 0))
+			if penetrations_left <= 0:
+				bullet.queue_free()
+				continue
+			bullet.set_meta("penetrations_left", penetrations_left - 1)
 
 func _on_enemy_defeated(enemy: EnemyBase) -> void:
 	if enemy == null:
@@ -497,14 +666,46 @@ func _apply_damage_to_enemy(enemy: EnemyBase, info: DamageInfo) -> void:
 		return
 	enemy.apply_damage_info(info)
 
-func _find_hit_enemy(point: Vector2, hit_radius: float) -> EnemyBase:
+func _find_hit_enemy_for_bullet(bullet: ProjectileRuntime, hit_radius: float) -> EnemyBase:
+	var hit_ids := PackedInt64Array(bullet.get_meta("hit_enemy_ids", PackedInt64Array()))
 	for child in enemy_container.get_children():
 		var enemy := child as EnemyBase
 		if enemy == null:
 			continue
-		if enemy.global_position.distance_to(point) <= hit_radius:
+		if hit_ids.has(enemy.get_instance_id()):
+			continue
+		if enemy.global_position.distance_to(bullet.global_position) <= hit_radius:
 			return enemy
 	return null
+
+func _record_bullet_hit_enemy(bullet: ProjectileRuntime, enemy: EnemyBase) -> void:
+	var hit_ids := PackedInt64Array(bullet.get_meta("hit_enemy_ids", PackedInt64Array()))
+	hit_ids.append(enemy.get_instance_id())
+	bullet.set_meta("hit_enemy_ids", hit_ids)
+
+func _trigger_projectile_special_effects(bullet: ProjectileRuntime, hit_enemy: EnemyBase, damage: float, source_weapon_id: StringName) -> void:
+	var explosion_radius := float(bullet.get_meta("explosion_radius", 0.0))
+	var explosion_ratio := float(bullet.get_meta("explosion_damage_ratio", 0.0))
+	if explosion_radius > 0.0 and explosion_ratio > 0.0:
+		var splash_damage := damage * explosion_ratio
+		_apply_area_damage(hit_enemy.global_position, explosion_radius, splash_damage, &"projectile", source_weapon_id)
+
+	if not bool(bullet.get_meta("can_split", true)):
+		return
+	var split_count := int(bullet.get_meta("split_count", 0))
+	if split_count <= 0:
+		return
+	var split_ratio := float(bullet.get_meta("split_damage_ratio", 0.52))
+	var split_damage := damage * split_ratio
+	if split_damage <= 0.0:
+		return
+	var hit_radius := float(bullet.get_meta("hit_radius", 18.0))
+	var spread := 18.0
+	var center_index := float(split_count - 1) * 0.5
+	for index in split_count:
+		var angle_deg := (float(index) - center_index) * spread
+		var split_direction := bullet.direction.rotated(deg_to_rad(angle_deg))
+		_spawn_projectile(split_direction, hit_radius, split_damage, null, String(source_weapon_id), hit_enemy.global_position, false, 0)
 
 func _is_out_of_viewport(point: Vector2, viewport_size: Vector2) -> bool:
 	return point.x < -projectile_despawn_margin \
@@ -603,111 +804,472 @@ func _try_open_upgrade_panel() -> void:
 	_refresh_upgrade_options()
 
 func _refresh_upgrade_options() -> void:
-	_option_a = _build_unlock_option()
-	if _option_a.is_empty():
-		_option_a = _build_strengthen_option(UPGRADE_FIRE_RATE)
+	var selection_pool := _build_skill_selection_pool()
+	_upgrade_options = _pick_upgrade_options(selection_pool, UPGRADE_OPTION_COUNT)
 
-	_option_b = _build_strengthen_option(UPGRADE_HIT_RADIUS)
-	if _option_b.is_empty():
-		_option_b = _build_strengthen_option(UPGRADE_FIRE_RATE)
+	for index in _upgrade_buttons.size():
+		var option_button := _upgrade_buttons[index]
+		if index < _upgrade_options.size():
+			var option := _upgrade_options[index]
+			option_button.visible = true
+			option_button.disabled = false
+			option_button.text = String(option.get("label", "强化武器"))
+		else:
+			option_button.visible = false
+			option_button.disabled = true
 
-	fire_rate_button.text = String(_option_a.get("label", "强化武器"))
-	hit_radius_button.text = String(_option_b.get("label", "强化武器"))
+func _build_skill_selection_pool() -> Dictionary:
+	var unlock_options := _build_unlock_options()
+	var weapon_upgrade_options: Array[Dictionary] = []
+	for weapon_id in _equipped_weapon_ids:
+		weapon_upgrade_options.append_array(_build_weapon_upgrade_options(weapon_id))
 
-func _build_unlock_option() -> Dictionary:
+	var must_offer: Array[Dictionary] = []
+	var high_priority: Array[Dictionary] = []
+	var normal: Array[Dictionary] = []
+	var unlocked_count := _equipped_weapon_ids.size()
+	var max_unlock_priority_count : int = max(0, PREFERRED_WEAPON_COUNT - unlocked_count)
+	var unlock_priority_count := 0
+	if unlocked_count < min(PREFERRED_WEAPON_COUNT, max_equipped_weapons):
+		unlock_priority_count = min(unlock_options.size(), max(1, min(UPGRADE_OPTION_COUNT - 1, max_unlock_priority_count)))
+
+	for index in unlock_priority_count:
+		must_offer.append(unlock_options[index])
+
+	for index in range(unlock_priority_count, unlock_options.size()):
+		high_priority.append(unlock_options[index])
+
+	high_priority.append_array(weapon_upgrade_options)
+	return {
+		"must_offer": must_offer,
+		"high_priority": high_priority,
+		"normal": normal,
+	}
+
+func _pick_upgrade_options(selection_pool: Dictionary, limit: int) -> Array[Dictionary]:
+	var picked: Array[Dictionary] = []
+	var used_keys: Dictionary = {}
+	var must_offer : Array = selection_pool.get("must_offer", [])
+	var high_priority : Array = selection_pool.get("high_priority", [])
+	var normal : Array = selection_pool.get("normal", [])
+	_append_unique_upgrade_options(picked, used_keys, must_offer, limit)
+	high_priority.shuffle()
+	_append_unique_upgrade_options(picked, used_keys, high_priority, limit)
+	normal.shuffle()
+	_append_unique_upgrade_options(picked, used_keys, normal, limit)
+	return picked
+
+func _append_unique_upgrade_options(picked: Array[Dictionary], used_keys: Dictionary, source_options: Array, limit: int) -> void:
+	for option_value in source_options:
+		if picked.size() >= limit:
+			return
+		if typeof(option_value) != TYPE_DICTIONARY:
+			continue
+		var option := option_value as Dictionary
+		var option_key := String(option.get("option_key", ""))
+		if option_key == "":
+			continue
+		if used_keys.has(option_key):
+			continue
+		used_keys[option_key] = true
+		picked.append(option)
+
+func _build_unlock_options() -> Array[Dictionary]:
+	var options: Array[Dictionary] = []
 	if _equipped_weapon_ids.size() >= max_equipped_weapons:
-		return {}
-	var locked_ids: Array[String] = []
+		return options
 	for weapon_id in _weapon_order:
 		if _equipped_weapon_ids.has(weapon_id):
 			continue
-		locked_ids.append(weapon_id)
-	if locked_ids.is_empty():
-		return {}
-	var weapon_id := locked_ids[0]
-	var weapon: Dictionary = _weapon_pool[weapon_id]
-	return {
-		"type": UPGRADE_UNLOCK_WEAPON,
-		"weapon_id": weapon_id,
-		"label": "解锁新武器：%s" % String(weapon.name),
-	}
-
-func _build_strengthen_option(upgrade_type: int) -> Dictionary:
-	if _equipped_weapon_ids.is_empty():
-		return {}
-	var weapon_id := _select_weapon_for_upgrade(upgrade_type)
-	if weapon_id == "":
-		return {}
-	var weapon: Dictionary = _weapon_pool[weapon_id]
-	if upgrade_type == UPGRADE_FIRE_RATE:
-		return {
-			"type": UPGRADE_FIRE_RATE,
-			"weapon_id": weapon_id,
-			"label": "强化已有武器：%s 射速" % String(weapon.name),
-		}
-	return {
-		"type": UPGRADE_HIT_RADIUS,
-		"weapon_id": weapon_id,
-		"label": "强化已有武器：%s 命中范围" % String(weapon.name),
-	}
-
-func _select_weapon_for_upgrade(upgrade_type: int) -> String:
-	var selected_id := ""
-	if upgrade_type == UPGRADE_FIRE_RATE:
-		var slowest_interval := -1.0
-		for weapon_id in _equipped_weapon_ids:
-			var weapon: Dictionary = _weapon_pool[weapon_id]
-			var interval := float(weapon.fire_interval)
-			if interval > slowest_interval:
-				slowest_interval = interval
-				selected_id = weapon_id
-		return selected_id
-
-	var smallest_radius := INF
-	for weapon_id in _equipped_weapon_ids:
+		if not _weapon_pool.has(weapon_id):
+			continue
 		var weapon: Dictionary = _weapon_pool[weapon_id]
-		var radius := float(weapon.hit_radius)
-		if radius < smallest_radius:
-			smallest_radius = radius
-			selected_id = weapon_id
-	return selected_id
+		options.append({
+			"type": OPTION_UNLOCK_WEAPON,
+			"weapon_id": weapon_id,
+			"option_key": "unlock:%s" % weapon_id,
+			"label": "解锁新武器：%s\n%s" % [String(weapon.name), _build_weapon_unlock_summary(weapon)],
+		})
+	return options
+
+func _build_weapon_unlock_summary(weapon: Dictionary) -> String:
+	var rate := 1.0 / maxf(0.05, float(weapon.fire_interval))
+	var weapon_kind := StringName(String(weapon.weapon_kind))
+	if weapon_kind == &"laser":
+		return "伤害 %.1f | 射速 %.2f/s | 光束宽度 %.1f" % [float(weapon.damage), rate, float(weapon.laser_width)]
+	if weapon_kind == &"summon":
+		var summon_rate := 1.0 / maxf(0.05, float(weapon.summon_tick_interval))
+		return "脉冲 %.1f | 跳频 %.2f/s | 范围 %.0f" % [float(weapon.damage), summon_rate, float(weapon.summon_radius)]
+	return "伤害 %.1f | 射速 %.2f/s | 弹丸 %d" % [float(weapon.damage), rate, int(weapon.projectile_count)]
+
+func _build_weapon_upgrade_options(weapon_id: String) -> Array[Dictionary]:
+	var options: Array[Dictionary] = []
+	if not _weapon_pool.has(weapon_id):
+		return options
+	var weapon: Dictionary = _weapon_pool[weapon_id]
+	var weapon_kind := StringName(String(weapon.weapon_kind))
+	var upgrade_types: Array[StringName] = []
+	if weapon_kind == &"laser":
+		upgrade_types = [UPGRADE_DAMAGE, UPGRADE_FIRE_RATE, UPGRADE_LASER_WIDTH, UPGRADE_LASER_DURATION, UPGRADE_LASER_CHAIN, UPGRADE_LASER_CHAIN_RANGE, UPGRADE_LASER_BURN]
+	elif weapon_kind == &"summon":
+		upgrade_types = [UPGRADE_DAMAGE, UPGRADE_FIRE_RATE, UPGRADE_SUMMON_RADIUS, UPGRADE_SUMMON_DURATION, UPGRADE_SUMMON_TICK_RATE, UPGRADE_SUMMON_EXTRA_FIELD, UPGRADE_SUMMON_IMPLOSION]
+	else:
+		upgrade_types = [UPGRADE_DAMAGE, UPGRADE_FIRE_RATE, UPGRADE_PROJECTILE_COUNT, UPGRADE_HIT_RADIUS, UPGRADE_PIERCE, UPGRADE_SPLIT, UPGRADE_EXPLOSION]
+		if weapon_id == "pulse":
+			upgrade_types.append(UPGRADE_PULSE_OVERLOAD)
+		elif weapon_id == "scatter":
+			upgrade_types.append(UPGRADE_SCATTER_BARRAGE)
+		elif weapon_id == "arc":
+			upgrade_types.append(UPGRADE_ARC_FOCUS)
+
+	for upgrade_type in upgrade_types:
+		var option := _build_weapon_upgrade_option(weapon_id, upgrade_type)
+		if option.is_empty():
+			continue
+		options.append(option)
+	return options
+
+func _build_weapon_upgrade_option(weapon_id: String, upgrade_type: StringName) -> Dictionary:
+	var weapon: Dictionary = _weapon_pool[weapon_id]
+	var weapon_name := String(weapon.name)
+	match upgrade_type:
+		UPGRADE_DAMAGE:
+			var before_damage := float(weapon.damage)
+			var after_damage := before_damage * 1.2
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_DAMAGE,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_DAMAGE)],
+				"label": "%s · 高能装药\n伤害 %.1f -> %.1f (+20%%)" % [weapon_name, before_damage, after_damage],
+			}
+		UPGRADE_FIRE_RATE:
+			var before_interval := float(weapon.fire_interval)
+			var min_interval := float(weapon.fire_interval_min)
+			var after_interval := maxf(min_interval, before_interval * 0.88)
+			if is_equal_approx(after_interval, before_interval):
+				return {}
+			var before_rate := 1.0 / maxf(0.05, before_interval)
+			var after_rate := 1.0 / maxf(0.05, after_interval)
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_FIRE_RATE,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_FIRE_RATE)],
+				"label": "%s · 快速循环\n射速 %.2f/s -> %.2f/s" % [weapon_name, before_rate, after_rate],
+			}
+		UPGRADE_PROJECTILE_COUNT:
+			var before_count := int(weapon.projectile_count)
+			if before_count >= 8:
+				return {}
+			var after_count := before_count + 1
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_PROJECTILE_COUNT,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_PROJECTILE_COUNT)],
+				"label": "%s · 扩容弹仓\n弹丸数量 %d -> %d" % [weapon_name, before_count, after_count],
+			}
+		UPGRADE_HIT_RADIUS:
+			var before_radius := float(weapon.hit_radius)
+			if before_radius >= 54.0:
+				return {}
+			var after_radius := minf(54.0, before_radius + 3.0)
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_HIT_RADIUS,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_HIT_RADIUS)],
+				"label": "%s · 稳定弹体\n命中范围 %.0f -> %.0f" % [weapon_name, before_radius, after_radius],
+			}
+		UPGRADE_PIERCE:
+			var before_pierce := int(weapon.get("projectile_penetration", 0))
+			if before_pierce >= 4:
+				return {}
+			var after_pierce := before_pierce + 1
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_PIERCE,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_PIERCE)],
+				"label": "%s · 穿甲弹芯\n可额外穿透目标 %d -> %d" % [weapon_name, before_pierce, after_pierce],
+			}
+		UPGRADE_SPLIT:
+			var before_split := int(weapon.get("split_count", 0))
+			if before_split >= 4:
+				return {}
+			var after_split := before_split + 1
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_SPLIT,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_SPLIT)],
+				"label": "%s · 裂变弹头\n命中分裂弹数 %d -> %d" % [weapon_name, before_split, after_split],
+			}
+		UPGRADE_EXPLOSION:
+			var before_explosion_radius := float(weapon.get("explosion_radius", 0.0))
+			var before_explosion_ratio := float(weapon.get("explosion_damage_ratio", 0.0))
+			var after_explosion_radius := minf(72.0, before_explosion_radius + 12.0)
+			var after_explosion_ratio := minf(0.9, before_explosion_ratio + 0.12)
+			if is_equal_approx(before_explosion_radius, after_explosion_radius) and is_equal_approx(before_explosion_ratio, after_explosion_ratio):
+				return {}
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_EXPLOSION,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_EXPLOSION)],
+				"label": "%s · 爆轰弹\n半径 %.0f -> %.0f，溅射 %.2f -> %.2f" % [weapon_name, before_explosion_radius, after_explosion_radius, before_explosion_ratio, after_explosion_ratio],
+			}
+		UPGRADE_PULSE_OVERLOAD:
+			var before_pulse_interval := float(weapon.fire_interval)
+			var after_pulse_interval := maxf(float(weapon.fire_interval_min), before_pulse_interval * 0.92)
+			var before_pulse_radius := float(weapon.hit_radius)
+			var after_pulse_radius := minf(60.0, before_pulse_radius + 2.0)
+			if is_equal_approx(before_pulse_interval, after_pulse_interval) and is_equal_approx(before_pulse_radius, after_pulse_radius):
+				return {}
+			var before_pulse_rate := 1.0 / maxf(0.05, before_pulse_interval)
+			var after_pulse_rate := 1.0 / maxf(0.05, after_pulse_interval)
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_PULSE_OVERLOAD,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_PULSE_OVERLOAD)],
+				"label": "%s · 脉冲过载\n射速 %.2f/s -> %.2f/s，命中范围 %.0f -> %.0f" % [weapon_name, before_pulse_rate, after_pulse_rate, before_pulse_radius, after_pulse_radius],
+			}
+		UPGRADE_SCATTER_BARRAGE:
+			var before_scatter_count := int(weapon.projectile_count)
+			var before_scatter_spread := float(weapon.spread_degrees)
+			var after_scatter_count : int = min(9, before_scatter_count + 1)
+			var after_scatter_spread : float = minf(28.0, before_scatter_spread + 2.0)
+			if before_scatter_count == after_scatter_count and is_equal_approx(before_scatter_spread, after_scatter_spread):
+				return {}
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_SCATTER_BARRAGE,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_SCATTER_BARRAGE)],
+				"label": "%s · 霰弹压制\n弹丸 %d -> %d，散射角 %.1f -> %.1f" % [weapon_name, before_scatter_count, after_scatter_count, before_scatter_spread, after_scatter_spread],
+			}
+		UPGRADE_ARC_FOCUS:
+			var before_arc_damage := float(weapon.damage)
+			var before_arc_spread := float(weapon.spread_degrees)
+			var after_arc_damage := before_arc_damage * 1.12
+			var after_arc_spread := maxf(2.0, before_arc_spread - 1.5)
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_ARC_FOCUS,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_ARC_FOCUS)],
+				"label": "%s · 弧光聚焦\n伤害 %.1f -> %.1f，散射角 %.1f -> %.1f" % [weapon_name, before_arc_damage, after_arc_damage, before_arc_spread, after_arc_spread],
+			}
+		UPGRADE_LASER_WIDTH:
+			var before_width := float(weapon.laser_width)
+			if before_width >= 14.0:
+				return {}
+			var after_width := minf(14.0, before_width + 0.8)
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_LASER_WIDTH,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_LASER_WIDTH)],
+				"label": "%s · 聚焦棱镜\n激光宽度 %.1f -> %.1f" % [weapon_name, before_width, after_width],
+			}
+		UPGRADE_LASER_DURATION:
+			var before_laser_duration := float(weapon.laser_duration)
+			if before_laser_duration >= 0.26:
+				return {}
+			var after_laser_duration := minf(0.26, before_laser_duration + 0.03)
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_LASER_DURATION,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_LASER_DURATION)],
+				"label": "%s · 持续灼线\n持续 %.2fs -> %.2fs" % [weapon_name, before_laser_duration, after_laser_duration],
+			}
+		UPGRADE_LASER_CHAIN:
+			var before_chain := int(weapon.get("laser_chain_count", 0))
+			if before_chain >= 4:
+				return {}
+			var after_chain := before_chain + 1
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_LASER_CHAIN,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_LASER_CHAIN)],
+				"label": "%s · 连锁折射\n额外连锁目标 %d -> %d" % [weapon_name, before_chain, after_chain],
+			}
+		UPGRADE_LASER_CHAIN_RANGE:
+			var before_chain_range := float(weapon.get("laser_chain_range", 150.0))
+			if before_chain_range >= 280.0:
+				return {}
+			var after_chain_range := minf(280.0, before_chain_range + 24.0)
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_LASER_CHAIN_RANGE,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_LASER_CHAIN_RANGE)],
+				"label": "%s · 导光阵列\n连锁距离 %.0f -> %.0f" % [weapon_name, before_chain_range, after_chain_range],
+			}
+		UPGRADE_LASER_BURN:
+			var before_burn_damage := float(weapon.get("laser_burn_damage", 0.0))
+			var before_burn_ticks := int(weapon.get("laser_burn_ticks", 0))
+			var after_burn_damage := minf(16.0, before_burn_damage + 2.0)
+			var after_burn_ticks : int= min(5, before_burn_ticks + 1)
+			if is_equal_approx(before_burn_damage, after_burn_damage) and before_burn_ticks == after_burn_ticks:
+				return {}
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_LASER_BURN,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_LASER_BURN)],
+				"label": "%s · 灼烧回路\n每跳伤害 %.1f -> %.1f，跳数 %d -> %d" % [weapon_name, before_burn_damage, after_burn_damage, before_burn_ticks, after_burn_ticks],
+			}
+		UPGRADE_SUMMON_RADIUS:
+			var before_summon_radius := float(weapon.summon_radius)
+			if before_summon_radius >= 180.0:
+				return {}
+			var after_summon_radius := minf(180.0, before_summon_radius + 10.0)
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_SUMMON_RADIUS,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_SUMMON_RADIUS)],
+				"label": "%s · 奇点扩张\n黑洞范围 %.0f -> %.0f" % [weapon_name, before_summon_radius, after_summon_radius],
+			}
+		UPGRADE_SUMMON_DURATION:
+			var before_summon_duration := float(weapon.summon_duration)
+			if before_summon_duration >= 8.0:
+				return {}
+			var after_summon_duration := minf(8.0, before_summon_duration + 0.5)
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_SUMMON_DURATION,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_SUMMON_DURATION)],
+				"label": "%s · 维持稳定\n持续 %.1fs -> %.1fs" % [weapon_name, before_summon_duration, after_summon_duration],
+			}
+		UPGRADE_SUMMON_TICK_RATE:
+			var before_tick_interval := float(weapon.summon_tick_interval)
+			var after_tick_interval := maxf(0.08, before_tick_interval * 0.9)
+			if is_equal_approx(before_tick_interval, after_tick_interval):
+				return {}
+			var before_tick_rate := 1.0 / maxf(0.05, before_tick_interval)
+			var after_tick_rate := 1.0 / maxf(0.05, after_tick_interval)
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_SUMMON_TICK_RATE,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_SUMMON_TICK_RATE)],
+				"label": "%s · 脉冲加密\n伤害频率 %.2f/s -> %.2f/s" % [weapon_name, before_tick_rate, after_tick_rate],
+			}
+		UPGRADE_SUMMON_EXTRA_FIELD:
+			var before_extra_fields := int(weapon.get("summon_extra_fields", 0))
+			if before_extra_fields >= 3:
+				return {}
+			var after_extra_fields := before_extra_fields + 1
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_SUMMON_EXTRA_FIELD,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_SUMMON_EXTRA_FIELD)],
+				"label": "%s · 双星引力\n额外黑洞数量 %d -> %d" % [weapon_name, before_extra_fields, after_extra_fields],
+			}
+		UPGRADE_SUMMON_IMPLOSION:
+			var before_implosion_ratio := float(weapon.get("summon_explode_damage_ratio", 0.0))
+			var before_implosion_radius := float(weapon.get("summon_explode_radius_bonus", 0.0))
+			var after_implosion_ratio := minf(1.0, before_implosion_ratio + 0.15)
+			var after_implosion_radius := minf(72.0, before_implosion_radius + 8.0)
+			if is_equal_approx(before_implosion_ratio, after_implosion_ratio) and is_equal_approx(before_implosion_radius, after_implosion_radius):
+				return {}
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_SUMMON_IMPLOSION,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_SUMMON_IMPLOSION)],
+				"label": "%s · 塌缩爆发\n结束爆发 %.2f -> %.2f，额外半径 %.0f -> %.0f" % [weapon_name, before_implosion_ratio, after_implosion_ratio, before_implosion_radius, after_implosion_radius],
+			}
+	return {}
 
 func _close_upgrade_panel() -> void:
 	_pending_level_ups = max(0, _pending_level_ups - 1)
 	if _pending_level_ups > 0:
 		GameState.is_paused = true
 		upgrade_panel.visible = true
+		_refresh_upgrade_options()
 		return
 	_is_upgrade_open = false
 	GameState.is_paused = false
 	upgrade_panel.visible = false
 
-func _on_pick_option_a_upgrade() -> void:
-	_apply_upgrade(_option_a)
-	_close_upgrade_panel()
-
-func _on_pick_option_b_upgrade() -> void:
-	_apply_upgrade(_option_b)
+func _on_pick_upgrade(option_index: int) -> void:
+	if option_index < 0 or option_index >= _upgrade_options.size():
+		return
+	_apply_upgrade(_upgrade_options[option_index])
 	_close_upgrade_panel()
 
 func _apply_upgrade(option: Dictionary) -> void:
 	if option.is_empty():
 		return
-	var upgrade_type := int(option.get("type", 0))
+	var option_type := StringName(String(option.get("type", "")))
 	var weapon_id := String(option.get("weapon_id", ""))
 
-	match upgrade_type:
-		UPGRADE_UNLOCK_WEAPON:
+	match option_type:
+		OPTION_UNLOCK_WEAPON:
 			_unlock_weapon(weapon_id)
+		OPTION_WEAPON_UPGRADE:
+			_apply_weapon_upgrade(weapon_id, StringName(String(option.get("upgrade_type", ""))))
+
+func _apply_weapon_upgrade(weapon_id: String, upgrade_type: StringName) -> void:
+	if not _weapon_pool.has(weapon_id):
+		return
+	var weapon: Dictionary = _weapon_pool[weapon_id]
+	match upgrade_type:
+		UPGRADE_DAMAGE:
+			weapon.damage = float(weapon.damage) * 1.2
 		UPGRADE_FIRE_RATE:
-			if _weapon_pool.has(weapon_id):
-				var weapon: Dictionary = _weapon_pool[weapon_id]
-				var min_interval := float(weapon.fire_interval_min)
-				weapon.fire_interval = maxf(min_interval, float(weapon.fire_interval) * 0.88)
+			weapon.fire_interval = maxf(float(weapon.fire_interval_min), float(weapon.fire_interval) * 0.88)
+		UPGRADE_PROJECTILE_COUNT:
+			weapon.projectile_count = min(8, int(weapon.projectile_count) + 1)
 		UPGRADE_HIT_RADIUS:
-			if _weapon_pool.has(weapon_id):
-				var weapon: Dictionary = _weapon_pool[weapon_id]
-				weapon.hit_radius = float(weapon.hit_radius) + 3.0
+			weapon.hit_radius = minf(54.0, float(weapon.hit_radius) + 3.0)
+		UPGRADE_PIERCE:
+			weapon.projectile_penetration = min(4, int(weapon.get("projectile_penetration", 0)) + 1)
+		UPGRADE_SPLIT:
+			weapon.split_count = min(4, int(weapon.get("split_count", 0)) + 1)
+		UPGRADE_EXPLOSION:
+			weapon.explosion_radius = minf(72.0, float(weapon.get("explosion_radius", 0.0)) + 12.0)
+			weapon.explosion_damage_ratio = minf(0.9, float(weapon.get("explosion_damage_ratio", 0.0)) + 0.12)
+		UPGRADE_PULSE_OVERLOAD:
+			weapon.fire_interval = maxf(float(weapon.fire_interval_min), float(weapon.fire_interval) * 0.92)
+			weapon.hit_radius = minf(60.0, float(weapon.hit_radius) + 2.0)
+		UPGRADE_SCATTER_BARRAGE:
+			weapon.projectile_count = min(9, int(weapon.projectile_count) + 1)
+			weapon.spread_degrees = minf(28.0, float(weapon.spread_degrees) + 2.0)
+		UPGRADE_ARC_FOCUS:
+			weapon.damage = float(weapon.damage) * 1.12
+			weapon.spread_degrees = maxf(2.0, float(weapon.spread_degrees) - 1.5)
+		UPGRADE_LASER_WIDTH:
+			weapon.laser_width = minf(14.0, float(weapon.laser_width) + 0.8)
+		UPGRADE_LASER_DURATION:
+			weapon.laser_duration = minf(0.26, float(weapon.laser_duration) + 0.03)
+		UPGRADE_LASER_CHAIN:
+			weapon.laser_chain_count = min(4, int(weapon.get("laser_chain_count", 0)) + 1)
+		UPGRADE_LASER_CHAIN_RANGE:
+			weapon.laser_chain_range = minf(280.0, float(weapon.get("laser_chain_range", 150.0)) + 24.0)
+		UPGRADE_LASER_BURN:
+			weapon.laser_burn_damage = minf(16.0, float(weapon.get("laser_burn_damage", 0.0)) + 2.0)
+			weapon.laser_burn_ticks = min(5, int(weapon.get("laser_burn_ticks", 0)) + 1)
+		UPGRADE_SUMMON_RADIUS:
+			weapon.summon_radius = minf(180.0, float(weapon.summon_radius) + 10.0)
+		UPGRADE_SUMMON_DURATION:
+			weapon.summon_duration = minf(8.0, float(weapon.summon_duration) + 0.5)
+		UPGRADE_SUMMON_TICK_RATE:
+			weapon.summon_tick_interval = maxf(0.08, float(weapon.summon_tick_interval) * 0.9)
+		UPGRADE_SUMMON_EXTRA_FIELD:
+			weapon.summon_extra_fields = min(3, int(weapon.get("summon_extra_fields", 0)) + 1)
+		UPGRADE_SUMMON_IMPLOSION:
+			weapon.summon_explode_damage_ratio = minf(1.0, float(weapon.get("summon_explode_damage_ratio", 0.0)) + 0.15)
+			weapon.summon_explode_radius_bonus = minf(72.0, float(weapon.get("summon_explode_radius_bonus", 0.0)) + 8.0)
 
 func _update_progression_text() -> void:
 	level_label.text = "Level: %d" % _current_level
