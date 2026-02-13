@@ -7,7 +7,6 @@ class_name EnemyBerserker
 
 var _base_move_speed := 0.0
 var _base_attack_interval := 0.0
-var _base_modulate := Color.WHITE
 var _is_frenzy := false
 
 func _ready() -> void:

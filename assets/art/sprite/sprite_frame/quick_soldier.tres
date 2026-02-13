@@ -1,0 +1,53 @@
+[gd_resource type="SpriteFrames" format=3 uid="uid://uu1dsjiorvk4"]
+
+[ext_resource type="Texture2D" uid="uid://bpv5me4nfjv6f" path="res://assets/art/sprite/LianZhou_Warrior_03.png" id="1_vo0yy"]
+[ext_resource type="Texture2D" uid="uid://dg1hlpshaw6s0" path="res://assets/art/sprite/LianZhou_Warrior_04.png" id="2_dleqx"]
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_vo0yy")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_dleqx")
+}],
+"loop": true,
+"name": &"attack",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_vo0yy")
+}],
+"loop": true,
+"name": &"death",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_vo0yy")
+}],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_vo0yy")
+}],
+"loop": true,
+"name": &"idle",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_vo0yy")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_dleqx")
+}],
+"loop": true,
+"name": &"move",
+"speed": 5.0
+}]

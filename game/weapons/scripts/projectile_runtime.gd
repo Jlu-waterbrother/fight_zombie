@@ -2,14 +2,128 @@ extends Area2D
 class_name ProjectileRuntime
 
 @export var speed := 900.0
+@export var visual_node_path: NodePath = ^"Visual"
+@export var trail_particles_path: NodePath = ^"TrailParticles"
+@export var impact_effect_scene: PackedScene
+@export var despawn_effect_scene: PackedScene
+
 var direction := Vector2.RIGHT
 var target_enemy: Node2D
+var _rotation_follows_direction := false
+var _rotation_offset_radians := 0.0
+var _impact_color := Color(1.0, 0.92, 0.35, 0.9)
+var _despawn_color := Color(0.9, 0.9, 0.9, 0.8)
+
+@onready var visual_node: CanvasItem = get_node_or_null(visual_node_path)
+@onready var trail_particles: GPUParticles2D = get_node_or_null(trail_particles_path) as GPUParticles2D
 
 func _physics_process(delta: float) -> void:
-    if GameState.is_paused:
-        return
+	if GameState.is_paused:
+		return
 
-    if target_enemy != null and is_instance_valid(target_enemy):
-        direction = (target_enemy.global_position - global_position).normalized()
+	if target_enemy != null and is_instance_valid(target_enemy):
+		direction = (target_enemy.global_position - global_position).normalized()
 
-    global_position += direction * speed * delta
+	if _rotation_follows_direction and direction.length_squared() > 0.0:
+		rotation = direction.angle() + _rotation_offset_radians
+
+	global_position += direction * speed * delta
+
+func configure_display_profile(profile: Dictionary) -> void:
+	if profile.is_empty():
+		return
+
+	if profile.has("speed"):
+		speed = maxf(20.0, float(profile.get("speed", speed)))
+	if profile.has("scale"):
+		var profile_scale := maxf(0.2, float(profile.get("scale", 1.0)))
+		scale = Vector2.ONE * profile_scale
+
+	_rotation_follows_direction = bool(profile.get("rotation_follows_direction", _rotation_follows_direction))
+	_rotation_offset_radians = deg_to_rad(float(profile.get("rotation_offset_degrees", rad_to_deg(_rotation_offset_radians))))
+	_impact_color = Color(profile.get("impact_color", _impact_color))
+	_despawn_color = Color(profile.get("despawn_color", _despawn_color))
+
+	if profile.has("shape_points"):
+		set_shape_points(profile.get("shape_points", PackedVector2Array()))
+	if profile.has("color"):
+		set_visual_color(Color(profile.get("color", Color.WHITE)))
+	if profile.has("trail_enabled"):
+		set_trail_enabled(bool(profile.get("trail_enabled", false)))
+
+func set_visual_color(next_color: Color) -> void:
+	if visual_node == null:
+		return
+	if visual_node is Polygon2D:
+		var polygon_visual := visual_node as Polygon2D
+		polygon_visual.color = next_color
+		return
+	visual_node.modulate = next_color
+
+func set_shape_points(points: PackedVector2Array) -> void:
+	if visual_node == null:
+		return
+	if not (visual_node is Polygon2D):
+		return
+	if points.is_empty():
+		return
+	var polygon_visual := visual_node as Polygon2D
+	polygon_visual.polygon = points
+
+func set_trail_enabled(enabled: bool) -> void:
+	if trail_particles == null:
+		return
+	trail_particles.emitting = enabled
+	trail_particles.visible = enabled
+
+func play_spawn_feedback() -> void:
+	_spawn_effect(impact_effect_scene, _impact_color, 0.16, 0.9)
+
+func play_impact_feedback() -> void:
+	_spawn_effect(impact_effect_scene, _impact_color, 0.14, 1.0)
+
+func play_despawn_feedback() -> void:
+	_spawn_effect(despawn_effect_scene, _despawn_color, 0.12, 0.7)
+
+func despawn(reason: StringName = &"default") -> void:
+	match reason:
+		&"impact":
+			play_impact_feedback()
+		&"spawn":
+			play_spawn_feedback()
+		_:
+			play_despawn_feedback()
+	queue_free()
+
+func _spawn_effect(effect_scene: PackedScene, effect_color: Color, duration: float, scale_multiplier: float) -> void:
+	if effect_scene != null:
+		var custom_effect := effect_scene.instantiate()
+		if custom_effect is Node2D:
+			var node_effect := custom_effect as Node2D
+			node_effect.global_position = global_position
+		if custom_effect is CanvasItem:
+			var item_effect := custom_effect as CanvasItem
+			item_effect.modulate = effect_color
+		if get_parent() != null:
+			get_parent().add_child(custom_effect)
+		return
+
+	if get_parent() == null:
+		return
+	var burst := Polygon2D.new()
+	burst.global_position = global_position
+	burst.color = effect_color
+	burst.polygon = PackedVector2Array([
+		Vector2(-4, 0), 
+		Vector2(0, -4), 
+		Vector2(4, 0), 
+		Vector2(0, 4)
+	])
+	
+	burst.scale = Vector2.ONE * maxf(0.35, scale_multiplier)
+	get_parent().add_child(burst)
+
+	var tween := burst.create_tween()
+	tween.tween_property(burst, "scale", burst.scale * 2.0, maxf(0.05, duration))
+	tween.parallel().tween_property(burst, "modulate:a", 0.0, maxf(0.05, duration))
+	tween.finished.connect(burst.queue_free)

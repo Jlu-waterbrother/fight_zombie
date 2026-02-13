@@ -1,14 +1,19 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene format=3 uid="uid://uui8blkbfpyx"]
 
-[ext_resource type="PackedScene" path="res://game/enemies/scenes/enemy_base.tscn" id="1"]
-[ext_resource type="Script" path="res://game/enemies/scripts/enemy_weaver.gd" id="2"]
+[ext_resource type="PackedScene" uid="uid://y8pevywye1tu" path="res://game/enemies/scenes/enemy_base.tscn" id="1"]
+[ext_resource type="Script" uid="uid://dhohuyqq5hb0w" path="res://game/enemies/scripts/enemy_weaver.gd" id="2"]
+[ext_resource type="SpriteFrames" uid="uid://b3ihq8y4q5vqa" path="res://assets/art/sprite/sprite_frame/weaver_soldier.tres" id="3_rjxva"]
 
-[node name="ZombieWeaver" instance=ExtResource("1")]
-script = ExtResource("2")
+[node name="ZombieWeaver" unique_id=308410209 instance=ExtResource("1")]
 modulate = Color(0.62, 1, 0.78, 1)
-move_speed = 105.0
-attack_interval = 0.82
-attack_damage = 10.0
+script = ExtResource("2")
 weave_amplitude = 88.0
 weave_frequency = 2.6
 horizontal_adjust_speed = 4.4
+move_speed = 105.0
+attack_interval = 0.82
+attack_damage = 10.0
+
+[node name="AnimatedSprite2D" parent="." index="4" unique_id=280369449]
+sprite_frames = ExtResource("3_rjxva")
+animation = &"death"

@@ -1,14 +1,19 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene format=3 uid="uid://w0a7m01s533j"]
 
-[ext_resource type="PackedScene" path="res://game/enemies/scenes/enemy_base.tscn" id="1"]
-[ext_resource type="Script" path="res://game/enemies/scripts/enemy_berserker.gd" id="2"]
+[ext_resource type="PackedScene" uid="uid://y8pevywye1tu" path="res://game/enemies/scenes/enemy_base.tscn" id="1"]
+[ext_resource type="Script" uid="uid://dwgftiawk2dsk" path="res://game/enemies/scripts/enemy_berserker.gd" id="2"]
+[ext_resource type="SpriteFrames" uid="uid://b3o7ikh1fx6kh" path="res://assets/art/sprite/sprite_frame/berserker_soldier.tres" id="3_bk3kc"]
 
-[node name="ZombieBerserker" instance=ExtResource("1")]
-script = ExtResource("2")
+[node name="ZombieBerserker" unique_id=1299847676 instance=ExtResource("1")]
 modulate = Color(1, 0.84, 0.7, 1)
-move_speed = 118.0
-attack_interval = 0.95
-attack_damage = 11.0
+script = ExtResource("2")
 frenzy_health_ratio = 0.45
 frenzy_speed_multiplier = 1.65
 frenzy_attack_interval_multiplier = 0.74
+move_speed = 118.0
+attack_interval = 0.95
+attack_damage = 11.0
+
+[node name="AnimatedSprite2D" parent="." index="4" unique_id=280369449]
+sprite_frames = ExtResource("3_bk3kc")
+animation = &"move"

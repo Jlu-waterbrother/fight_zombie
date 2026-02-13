@@ -2,6 +2,7 @@
 
 [ext_resource type="Script" uid="uid://dwlykl5y68vox" path="res://game/enemies/scripts/enemy_base.gd" id="1"]
 [ext_resource type="Script" uid="uid://ibxndapr141d" path="res://core/components/health_component.gd" id="2"]
+[ext_resource type="SpriteFrames" uid="uid://btyudws0j8ev6" path="res://assets/art/sprite/sprite_frame/soldier_normal.tres" id="3_247yr"]
 
 [node name="EnemyBase" type="CharacterBody2D" unique_id=520375079]
 script = ExtResource("1")
@@ -25,3 +26,7 @@ value = 60.0
 show_percentage = false
 
 [node name="DamageLayer" type="Node2D" parent="." unique_id=1458085350]
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=280369449]
+sprite_frames = ExtResource("3_247yr")
+animation = &"attack"

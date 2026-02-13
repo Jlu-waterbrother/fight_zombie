@@ -1,8 +1,12 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene format=3 uid="uid://byh377cx6xgtl"]
 
-[ext_resource type="PackedScene" path="res://game/enemies/scenes/enemy_base.tscn" id="1"]
+[ext_resource type="PackedScene" uid="uid://y8pevywye1tu" path="res://game/enemies/scenes/enemy_base.tscn" id="1"]
+[ext_resource type="SpriteFrames" uid="uid://uu1dsjiorvk4" path="res://assets/art/sprite/sprite_frame/quick_soldier.tres" id="2_yq858"]
 
-[node name="ZombieRunner" instance=ExtResource("1")]
+[node name="ZombieRunner" unique_id=511180199 instance=ExtResource("1")]
 modulate = Color(1, 0.82, 0.82, 1)
 move_speed = 155.0
 attack_interval = 0.62
+
+[node name="AnimatedSprite2D" parent="." index="4" unique_id=280369449]
+sprite_frames = ExtResource("2_yq858")

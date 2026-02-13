@@ -24,11 +24,13 @@ func _physics_process(delta: float) -> void:
 
 	if GameState.is_paused:
 		velocity = Vector2.ZERO
+		_set_enemy_animation_state(ANIM_IDLE)
 		return
 
 	if _is_attacking:
 		velocity = Vector2.ZERO
 		move_and_slide()
+		_set_enemy_animation_state(ANIM_ATTACK)
 		_tick_attack(delta)
 		return
 
@@ -37,8 +39,10 @@ func _physics_process(delta: float) -> void:
 	var horizontal_velocity := (target_x - global_position.x) * horizontal_adjust_speed
 	velocity = Vector2(horizontal_velocity, move_speed)
 	move_and_slide()
+	_set_enemy_animation_state(ANIM_MOVE)
 
 	if global_position.y >= attack_line_y:
 		_is_attacking = true
 		velocity = Vector2.ZERO
 		_attack_cooldown = 0.0
+		_set_enemy_animation_state(ANIM_ATTACK, true)

@@ -281,7 +281,7 @@ func _tick_wave_spawn(delta: float) -> void:
 func _try_complete_wave_or_run(delta: float) -> void:
 	if _current_wave_spawn_remaining > 0:
 		return
-	if enemy_container.get_child_count() > 0:
+	if _alive_enemy_count() > 0:
 		return
 
 	if _current_wave_index >= _effective_total_waves:
@@ -469,6 +469,8 @@ func _fire_weapon(weapon: Dictionary) -> void:
 		var enemy := child as EnemyBase
 		if enemy == null:
 			continue
+		if enemy.is_defeated():
+			continue
 		var distance := enemy.global_position.distance_to(player.global_position)
 		if distance < nearest_distance:
 			nearest_distance = distance
@@ -536,6 +538,8 @@ func _on_summon_pulse_damage(position: Vector2, radius: float, info: DamageInfo)
 	for child in enemy_container.get_children():
 		var enemy := child as EnemyBase
 		if enemy == null:
+			continue
+		if enemy.is_defeated():
 			continue
 		if enemy.global_position.distance_to(position) > radius:
 			continue
@@ -605,7 +609,43 @@ func _spawn_projectile(direction: Vector2, hit_radius: float, damage: float, tar
 	bullet.set_meta("explosion_damage_ratio", float(weapon.get("explosion_damage_ratio", 0.0)))
 	bullet.set_meta("can_split", can_split)
 	bullet.set_meta("hit_enemy_ids", PackedInt64Array())
+	bullet.configure_display_profile(_projectile_display_profile_for_weapon(weapon_id, not can_split))
 	bullet_container.add_child(bullet)
+
+func _projectile_display_profile_for_weapon(weapon_id: String, is_split_child: bool = false) -> Dictionary:
+	var profile := {
+		"rotation_follows_direction": true,
+		"rotation_offset_degrees": 90.0,
+		"scale": 1.0,
+		"trail_enabled": false,
+		"color": Color(1.0, 0.9, 0.2, 1.0),
+		"impact_color": Color(1.0, 0.92, 0.35, 0.9),
+		"despawn_color": Color(0.8, 0.82, 0.9, 0.72),
+		"shape_points": PackedVector2Array([Vector2(0,-6),Vector2(4,3), Vector2(0,6),Vector2(-4, 3)]),
+	}
+	match weapon_id:
+		"pulse":
+			profile["color"] = Color(1.0, 0.95, 0.32, 1.0)
+			profile["impact_color"] = Color(1.0, 0.9, 0.3, 0.95)
+			profile["shape_points"] = PackedVector2Array([Vector2(0,-6),Vector2(5,0), Vector2(0,6),Vector2(-5, 0)])
+		"scatter":
+			profile["color"] = Color(1.0, 0.66, 0.28, 1.0)
+			profile["impact_color"] = Color(1.0, 0.74, 0.32, 0.95)
+			profile["shape_points"] = PackedVector2Array([Vector2(-5,-3),Vector2(5,-3), Vector2(5,3),Vector2(-5,3)])
+			profile["rotation_follows_direction"] = false
+		"arc":
+			profile["color"] = Color(0.46, 0.95, 1.0, 1.0)
+			profile["impact_color"] = Color(0.56, 0.92, 1.0, 0.95)
+			profile["despawn_color"] = Color(0.42, 0.8, 1.0, 0.7)
+			profile["shape_points"] = PackedVector2Array([Vector2(0,7),Vector2(5,5), Vector2(-5,5)])
+			profile["trail_enabled"] = true
+		_:
+			pass
+
+	if is_split_child:
+		profile["scale"] = 0.78
+		profile["trail_enabled"] = false
+	return profile
 
 func _try_fire_laser_chains(first_target: EnemyBase, weapon: Dictionary, base_damage: float) -> void:
 	var chain_count := int(weapon.get("laser_chain_count", 0))
@@ -660,6 +700,8 @@ func _find_nearest_enemy_to_point(origin: Vector2, max_distance: float, ignored_
 		var enemy := child as EnemyBase
 		if enemy == null:
 			continue
+		if enemy.is_defeated():
+			continue
 		var enemy_id := enemy.get_instance_id()
 		if ignored_ids.has(enemy_id):
 			continue
@@ -680,6 +722,8 @@ func _apply_area_damage(center: Vector2, radius: float, damage: float, source_ki
 		var enemy := child as EnemyBase
 		if enemy == null:
 			continue
+		if enemy.is_defeated():
+			continue
 		if enemy.global_position.distance_to(center) > radius:
 			continue
 		_apply_damage_to_enemy(enemy, info)
@@ -692,7 +736,7 @@ func _update_projectile_state() -> void:
 			continue
 
 		if _is_out_of_viewport(bullet.global_position, viewport_size):
-			bullet.queue_free()
+			bullet.despawn(&"despawn")
 			continue
 
 		var hit_radius := float(bullet.get_meta("hit_radius", 18.0))
@@ -706,7 +750,7 @@ func _update_projectile_state() -> void:
 			_trigger_projectile_special_effects(bullet, hit_enemy, damage, source_weapon_id)
 			var penetrations_left := int(bullet.get_meta("penetrations_left", 0))
 			if penetrations_left <= 0:
-				bullet.queue_free()
+				bullet.despawn(&"impact")
 				continue
 			bullet.set_meta("penetrations_left", penetrations_left - 1)
 
@@ -717,7 +761,6 @@ func _on_enemy_defeated(enemy: EnemyBase) -> void:
 		return
 	_kill_count += 1
 	_gain_experience(exp_per_kill)
-	enemy.queue_free()
 
 func _apply_damage_to_enemy(enemy: EnemyBase, info: DamageInfo) -> void:
 	if enemy == null:
@@ -731,6 +774,8 @@ func _find_hit_enemy_for_bullet(bullet: ProjectileRuntime, hit_radius: float) ->
 	for child in enemy_container.get_children():
 		var enemy := child as EnemyBase
 		if enemy == null:
+			continue
+		if enemy.is_defeated():
 			continue
 		if hit_ids.has(enemy.get_instance_id()):
 			continue
@@ -766,6 +811,17 @@ func _trigger_projectile_special_effects(bullet: ProjectileRuntime, hit_enemy: E
 		var angle_deg := (float(index) - center_index) * spread
 		var split_direction := bullet.direction.rotated(deg_to_rad(angle_deg))
 		_spawn_projectile(split_direction, hit_radius, split_damage, null, String(source_weapon_id), hit_enemy.global_position, false, 0)
+
+func _alive_enemy_count() -> int:
+	var alive_count := 0
+	for child in enemy_container.get_children():
+		var enemy := child as EnemyBase
+		if enemy == null:
+			continue
+		if enemy.is_defeated():
+			continue
+		alive_count += 1
+	return alive_count
 
 func _is_out_of_viewport(point: Vector2, viewport_size: Vector2) -> bool:
 	return point.x < -projectile_despawn_margin \
@@ -932,7 +988,7 @@ func _update_wave_text() -> void:
 	if _is_run_over and not _is_failed:
 		wave_label.text = "Wave: %d/%d (胜利)" % [_current_wave_index, _effective_total_waves]
 		return
-	wave_label.text = "Wave: %d/%d  Remaining: %d" % [_current_wave_index, _effective_total_waves, _current_wave_spawn_remaining + enemy_container.get_child_count()]
+	wave_label.text = "Wave: %d/%d  Remaining: %d" % [_current_wave_index, _effective_total_waves, _current_wave_spawn_remaining + _alive_enemy_count()]
 
 func _gain_experience(amount: int) -> void:
 	if amount <= 0:

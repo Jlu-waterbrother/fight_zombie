@@ -1,0 +1,53 @@
+[gd_resource type="SpriteFrames" format=3 uid="uid://btyudws0j8ev6"]
+
+[ext_resource type="Texture2D" uid="uid://dsuakc3lsl0wt" path="res://assets/art/sprite/LianZhou_Warrior_00.png" id="1_00k1y"]
+[ext_resource type="Texture2D" uid="uid://catx8njdd2r8w" path="res://assets/art/sprite/LianZhou_Warrior_01.png" id="2_nerea"]
+
+[resource]
+animations = [{
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_00k1y")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_nerea")
+}],
+"loop": true,
+"name": &"attack",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_00k1y")
+}],
+"loop": false,
+"name": &"death",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_00k1y")
+}],
+"loop": true,
+"name": &"default",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_00k1y")
+}],
+"loop": true,
+"name": &"idle",
+"speed": 5.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": ExtResource("1_00k1y")
+}, {
+"duration": 1.0,
+"texture": ExtResource("2_nerea")
+}],
+"loop": true,
+"name": &"move",
+"speed": 5.0
+}]
