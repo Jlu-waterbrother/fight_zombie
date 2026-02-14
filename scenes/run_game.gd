@@ -1,9 +1,15 @@
 extends Node2D
 
 const ENEMY_SCENE := preload("res://game/enemies/scenes/zombie_basic.tscn")
+const RUNNER_ENEMY_SCENE := preload("res://game/enemies/scenes/zombie_runner.tscn")
+const WEAVER_ENEMY_SCENE := preload("res://game/enemies/scenes/zombie_weaver.tscn")
+const TANK_ENEMY_SCENE := preload("res://game/enemies/scenes/zombie_tank.tscn")
+const BERSERKER_ENEMY_SCENE := preload("res://game/enemies/scenes/zombie_berserker.tscn")
 const BULLET_SCENE := preload("res://game/weapons/scenes/bullet.tscn")
 const AOE_FIELD_SCENE := preload("res://game/weapons/scenes/aoe_field.tscn")
 const DEFAULT_WAVE_TABLE := preload("res://game/waves/data/wave_table_default.tres")
+const BOSS_WAVE_10_SCENE := preload("res://game/enemies/scenes/zombie_boss_brute.tscn")
+const BOSS_WAVE_20_SCENE := preload("res://game/enemies/scenes/zombie_boss_overlord.tscn")
 const DEFAULT_WEAPON_RESOURCES: Array[WeaponEntry] = [
 	preload("res://game/weapons/data/pulse_weapon.tres"),
 	preload("res://game/weapons/data/laser_weapon.tres"),
@@ -37,11 +43,13 @@ const UPGRADE_SUMMON_EXTRA_FIELD: StringName = &"summon_extra_field"
 const UPGRADE_SUMMON_IMPLOSION: StringName = &"summon_implosion"
 
 @export var enemy_spawn_interval := 1.2
+@export var intra_wave_spawn_interval_scale := 1.1
+@export var enemy_move_speed_scale := 0.78
 @export var enemy_contact_damage := 20.0
 @export var enemy_contact_radius := 28.0
-@export var total_waves := 3
-@export var enemies_per_wave_base := 8
-@export var enemies_per_wave_growth := 4
+@export var total_waves := 20
+@export var enemies_per_wave_base := 6
+@export var enemies_per_wave_growth := 2
 @export var enemy_base_max_health := 60.0
 @export var enemy_health_growth_per_wave := 0.12
 @export var inter_wave_delay := 1.8
@@ -59,11 +67,13 @@ const UPGRADE_SUMMON_IMPLOSION: StringName = &"summon_implosion"
 @onready var enemy_container: Node2D = $EnemyContainer
 @onready var bullet_container: Node2D = $BulletContainer
 @onready var summon_container: Node2D = $SummonContainer
-@onready var health_label: Label = $UILayer/StatusPanel/MarginContainer/StatusVBox/HealthLabel
+@onready var health_progress_bar: ProgressBar = $UILayer/HealthProgressBar
+@onready var health_label: Label = $UILayer/HealthProgressBar/Label
 @onready var kill_label: Label = $UILayer/StatusPanel/MarginContainer/StatusVBox/KillLabel
 @onready var wave_label: Label = $UILayer/StatusPanel/MarginContainer/StatusVBox/WaveLabel
 @onready var level_label: Label = $UILayer/StatusPanel/MarginContainer/StatusVBox/LevelLabel
-@onready var exp_label: Label = $UILayer/StatusPanel/MarginContainer/StatusVBox/ExpLabel
+@onready var exp_progress_bar: ProgressBar = $UILayer/ExpProgressBar
+@onready var exp_label: Label = $UILayer/ExpProgressBar/Label
 @onready var weapon_label: Label = $UILayer/StatusPanel/MarginContainer/StatusVBox/WeaponLabel
 @onready var upgrade_history_button: Button = $UILayer/UpgradeHistoryButton
 @onready var upgrade_history_panel: PanelContainer = $UILayer/UpgradeHistoryPanel
@@ -300,12 +310,10 @@ func _enemy_count_for_wave(wave_index: int) -> int:
 	return max(1, _effective_enemies_per_wave_base + (wave_index - 1) * _effective_enemies_per_wave_growth)
 
 func _apply_run_modifiers_from_state() -> void:
-	var wave_multiplier := maxf(0.5, GameState.wave_count_multiplier)
 	var enemy_multiplier := maxf(0.5, GameState.enemy_count_multiplier)
 	var spawn_multiplier := maxf(0.5, GameState.spawn_interval_multiplier)
-	var configured_wave_count := _configured_wave_count()
 
-	_effective_total_waves = max(1, int(round(float(configured_wave_count) * wave_multiplier)))
+	_effective_total_waves = _configured_wave_count()
 	_effective_enemy_spawn_interval = maxf(0.1, enemy_spawn_interval * spawn_multiplier)
 	_effective_enemies_per_wave_base = max(1, int(round(float(enemies_per_wave_base) * enemy_multiplier)))
 	_effective_enemies_per_wave_growth = max(1, int(round(float(enemies_per_wave_growth) * enemy_multiplier)))
@@ -313,49 +321,132 @@ func _apply_run_modifiers_from_state() -> void:
 	_effective_spawn_interval_scale = spawn_multiplier
 
 func _configured_wave_count() -> int:
-	if wave_table != null and not wave_table.waves.is_empty():
-		return wave_table.waves.size()
-	return total_waves
+	return max(1, total_waves)
 
 func _wave_definition_for_index(wave_index: int) -> WaveDefinition:
 	if wave_table == null:
 		return null
 	if wave_table.waves.is_empty():
 		return null
-	var clamped_index := clampi(wave_index - 1, 0, wave_table.waves.size() - 1)
-	return wave_table.waves[clamped_index]
+	var definition_index := wave_index - 1
+	if definition_index < 0 or definition_index >= wave_table.waves.size():
+		return null
+	return wave_table.waves[definition_index]
 
 func _setup_wave_spawn_plan(wave_index: int) -> void:
 	_active_wave_batches.clear()
 	_current_wave_spawn_remaining = 0
+	var spawn_interval_scale := maxf(0.6, intra_wave_spawn_interval_scale)
 	var definition := _wave_definition_for_index(wave_index)
 	if definition == null or definition.batches.is_empty():
-		_current_wave_spawn_remaining = _enemy_count_for_wave(wave_index)
-		_active_wave_batches.append({
-			"batch": null,
-			"remaining": _current_wave_spawn_remaining,
-			"delay_left": 0.0,
-			"cooldown": 0.0,
-			"spawn_interval": _effective_enemy_spawn_interval,
-			"burst_size": 1,
-		})
-		return
+		_append_generated_wave_batches(wave_index, spawn_interval_scale)
+	else:
+		for batch in definition.batches:
+			_append_wave_batch_runtime(batch, spawn_interval_scale, true)
+	_append_boss_wave_batch_if_needed(wave_index, spawn_interval_scale)
 
-	for batch in definition.batches:
-		if batch == null:
-			continue
-		var configured_count : int = max(1, int(round(float(max(1, batch.count)) * _effective_enemy_count_scale)))
-		var configured_interval := maxf(0.05, batch.spawn_interval * _effective_spawn_interval_scale)
-		var configured_delay := maxf(0.0, batch.start_delay * _effective_spawn_interval_scale)
-		_active_wave_batches.append({
-			"batch": batch,
-			"remaining": configured_count,
-			"delay_left": configured_delay,
-			"cooldown": 0.0,
-			"spawn_interval": configured_interval,
-			"burst_size": max(1, batch.burst_size),
-		})
-		_current_wave_spawn_remaining += configured_count
+func _append_wave_batch_runtime(batch: WaveSpawnBatch, spawn_interval_scale: float, apply_enemy_count_scale: bool) -> void:
+	if batch == null:
+		return
+	var count_scale := _effective_enemy_count_scale if apply_enemy_count_scale else 1.0
+	var configured_count : int = max(1, int(round(float(max(1, batch.count)) * count_scale)))
+	var configured_interval := maxf(0.03, batch.spawn_interval * _effective_spawn_interval_scale * spawn_interval_scale)
+	var configured_delay := maxf(0.0, batch.start_delay * _effective_spawn_interval_scale)
+	_active_wave_batches.append({
+		"batch": batch,
+		"remaining": configured_count,
+		"delay_left": configured_delay,
+		"cooldown": 0.0,
+		"spawn_interval": configured_interval,
+		"burst_size": 1,
+	})
+	_current_wave_spawn_remaining += configured_count
+
+func _append_generated_wave_batches(wave_index: int, spawn_interval_scale: float) -> void:
+	var total_count : int = max(1, _enemy_count_for_wave(wave_index))
+	var batch_count := 3
+	if wave_index >= 15:
+		batch_count = 4
+	var remaining := total_count
+	var difficulty_t := clampf(float(max(0, wave_index - 6)) / 14.0, 0.0, 1.0)
+	var base_interval := lerpf(0.14, 0.08, difficulty_t)
+
+	for batch_index in batch_count:
+		var slots_left := batch_count - batch_index
+		var count := remaining
+		if batch_index < batch_count - 1:
+			count = max(1, int(ceil(float(remaining) / float(slots_left))))
+		remaining = max(0, remaining - count)
+
+		var generated_batch := WaveSpawnBatch.new()
+		generated_batch.enemy_scene = _generated_enemy_scene_for_wave(wave_index, batch_index)
+		generated_batch.count = count
+		generated_batch.start_delay = float(batch_index) * 0.14
+		generated_batch.spawn_interval = base_interval + float(batch_index) * 0.02
+		generated_batch.burst_size = 1
+		generated_batch.hp_multiplier = 1.0 + float(max(wave_index - 5, 0)) * 0.08 + float(batch_index) * 0.03
+		generated_batch.attack_multiplier = 1.0 + float(max(wave_index - 8, 0)) * 0.03
+		_append_wave_batch_runtime(generated_batch, spawn_interval_scale, true)
+
+func _generated_enemy_scene_for_wave(wave_index: int, batch_index: int) -> PackedScene:
+	if wave_index <= 7:
+		if batch_index == 1:
+			return RUNNER_ENEMY_SCENE
+		return ENEMY_SCENE
+	if wave_index <= 11:
+		if batch_index == 0:
+			return RUNNER_ENEMY_SCENE
+		if batch_index == 1:
+			return WEAVER_ENEMY_SCENE
+		return ENEMY_SCENE
+	if wave_index <= 15:
+		if batch_index == 0:
+			return WEAVER_ENEMY_SCENE
+		if batch_index == 1:
+			return RUNNER_ENEMY_SCENE
+		if batch_index == 2:
+			return TANK_ENEMY_SCENE
+		return ENEMY_SCENE
+	match batch_index % 4:
+		0:
+			return TANK_ENEMY_SCENE
+		1:
+			return WEAVER_ENEMY_SCENE
+		2:
+			return BERSERKER_ENEMY_SCENE
+		_:
+			return RUNNER_ENEMY_SCENE
+
+func _append_boss_wave_batch_if_needed(wave_index: int, spawn_interval_scale: float) -> void:
+	var boss_batch := _boss_batch_for_wave(wave_index)
+	if boss_batch == null:
+		return
+	_append_wave_batch_runtime(boss_batch, spawn_interval_scale, false)
+
+func _boss_batch_for_wave(wave_index: int) -> WaveSpawnBatch:
+	var boss_scene: PackedScene = null
+	var boss_hp_multiplier := 1.0
+	var boss_attack_multiplier := 1.0
+	match wave_index:
+		10:
+			boss_scene = BOSS_WAVE_10_SCENE
+			boss_hp_multiplier = 9.0
+			boss_attack_multiplier = 1.15
+		20:
+			boss_scene = BOSS_WAVE_20_SCENE
+			boss_hp_multiplier = 14.0
+			boss_attack_multiplier = 1.2
+		_:
+			return null
+	var batch := WaveSpawnBatch.new()
+	batch.enemy_scene = boss_scene
+	batch.count = 1
+	batch.start_delay = 1.1
+	batch.spawn_interval = 1.0
+	batch.burst_size = 1
+	batch.hp_multiplier = boss_hp_multiplier
+	batch.attack_multiplier = boss_attack_multiplier
+	return batch
 
 func _spawn_enemy_from_batch(batch: WaveSpawnBatch) -> void:
 	var enemy_scene := ENEMY_SCENE
@@ -377,6 +468,7 @@ func _spawn_enemy_from_batch(batch: WaveSpawnBatch) -> void:
 
 	enemy.attack_line_y = player.global_position.y
 	enemy.attack_damage = enemy_attack_damage
+	enemy.move_speed = maxf(25.0, enemy.move_speed * maxf(0.3, enemy_move_speed_scale))
 	enemy.attack_tick.connect(_on_enemy_attack_tick)
 	enemy.defeated.connect(_on_enemy_defeated)
 
@@ -1008,6 +1100,8 @@ func _update_health_text() -> void:
 	var player_controller := player as PlayerController
 	var current_health := player_controller.health_component.current_health
 	var max_health := player_controller.health_component.max_health
+	health_progress_bar.max_value = maxf(1.0, max_health)
+	health_progress_bar.value = clampf(current_health, 0.0, max_health)
 	health_label.text = "HP: %.0f / %.0f" % [current_health, max_health]
 
 func _update_kill_text() -> void:
@@ -1643,6 +1737,8 @@ func _apply_weapon_upgrade(weapon_id: String, upgrade_type: StringName) -> void:
 
 func _update_progression_text() -> void:
 	level_label.text = "Level: %d" % _current_level
+	exp_progress_bar.max_value = max(1, _next_level_exp)
+	exp_progress_bar.value = clampi(_current_exp, 0, _next_level_exp)
 	exp_label.text = "EXP: %d / %d" % [_current_exp, _next_level_exp]
 
 func _update_weapon_text() -> void:

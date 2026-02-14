@@ -6,7 +6,6 @@ extends Control
 @onready var best_level_label: Label = $MarginContainer/VBoxContainer/Stats/BestLevelLabel
 @onready var best_time_label: Label = $MarginContainer/VBoxContainer/Stats/BestTimeLabel
 @onready var difficulty_option: OptionButton = $MarginContainer/VBoxContainer/RunConfig/DifficultyOption
-@onready var wave_multiplier_spin: SpinBox = $MarginContainer/VBoxContainer/RunConfig/WaveMultiplierSpin
 @onready var enemy_multiplier_spin: SpinBox = $MarginContainer/VBoxContainer/RunConfig/EnemyMultiplierSpin
 @onready var spawn_multiplier_spin: SpinBox = $MarginContainer/VBoxContainer/RunConfig/SpawnMultiplierSpin
 @onready var start_button: Button = $MarginContainer/VBoxContainer/Buttons/StartButton
@@ -25,7 +24,6 @@ func _ready() -> void:
 	clear_save_button.pressed.connect(_on_clear_save_pressed)
 	quit_button.pressed.connect(_on_quit_pressed)
 	difficulty_option.item_selected.connect(_on_difficulty_selected)
-	wave_multiplier_spin.value_changed.connect(_on_custom_modifier_changed)
 	enemy_multiplier_spin.value_changed.connect(_on_custom_modifier_changed)
 	spawn_multiplier_spin.value_changed.connect(_on_custom_modifier_changed)
 
@@ -55,7 +53,6 @@ func _sync_config_from_state() -> void:
 	_is_syncing_ui = true
 	var selected_index := _find_difficulty_index(GameState.difficulty_key)
 	difficulty_option.select(selected_index)
-	wave_multiplier_spin.value = GameState.wave_count_multiplier
 	enemy_multiplier_spin.value = GameState.enemy_count_multiplier
 	spawn_multiplier_spin.value = GameState.spawn_interval_multiplier
 	_is_syncing_ui = false
@@ -89,7 +86,7 @@ func _on_difficulty_selected(index: int) -> void:
 		return
 	var key := String(difficulty_option.get_item_metadata(index))
 	if key == GameState.DIFFICULTY_CUSTOM:
-		GameState.set_custom_run_modifiers(wave_multiplier_spin.value, enemy_multiplier_spin.value, spawn_multiplier_spin.value)
+		GameState.set_custom_run_modifiers(1.0, enemy_multiplier_spin.value, spawn_multiplier_spin.value)
 	else:
 		GameState.apply_difficulty_preset(key)
 	_sync_config_from_state()
@@ -97,5 +94,5 @@ func _on_difficulty_selected(index: int) -> void:
 func _on_custom_modifier_changed(_value: float) -> void:
 	if _is_syncing_ui:
 		return
-	GameState.set_custom_run_modifiers(wave_multiplier_spin.value, enemy_multiplier_spin.value, spawn_multiplier_spin.value)
+	GameState.set_custom_run_modifiers(1.0, enemy_multiplier_spin.value, spawn_multiplier_spin.value)
 	_sync_config_from_state()

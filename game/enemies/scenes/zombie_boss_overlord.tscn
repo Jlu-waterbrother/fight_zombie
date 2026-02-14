@@ -1,0 +1,15 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://game/enemies/scenes/enemy_base.tscn" id="1"]
+[ext_resource type="SpriteFrames" path="res://assets/art/sprite/sprite_frame/berserker_soldier.tres" id="2"]
+
+[node name="ZombieBossOverlord" instance=ExtResource("1")]
+modulate = Color(0.88, 0.52, 0.52, 1)
+scale = Vector2(1.9, 1.9)
+move_speed = 50.0
+attack_interval = 0.95
+attack_damage = 24.0
+
+[node name="AnimatedSprite2D" parent="."]
+sprite_frames = ExtResource("2")
+animation = &"move"
