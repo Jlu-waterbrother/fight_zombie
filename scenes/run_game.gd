@@ -10,6 +10,7 @@ const AOE_FIELD_SCENE := preload("res://game/weapons/scenes/aoe_field.tscn")
 const DEFAULT_WAVE_TABLE := preload("res://game/waves/data/wave_table_default.tres")
 const BOSS_WAVE_10_SCENE := preload("res://game/enemies/scenes/zombie_boss_brute.tscn")
 const BOSS_WAVE_20_SCENE := preload("res://game/enemies/scenes/zombie_boss_overlord.tscn")
+const WEAPON_COOLDOWN_ICON_SCENE := preload("res://game/ui/scripts/weapon_cooldown_icon.gd")
 const DEFAULT_WEAPON_TABLE := preload("res://game/weapons/data/weapon_table_default.tres")
 const DEFAULT_ENEMY_TABLE := preload("res://game/enemies/data/enemy_table_default.tres")
 const UPGRADE_OPTION_COUNT := 3
@@ -94,8 +95,17 @@ const SFX_KEY_LEVEL_UP: StringName = &"run_level_up"
 @export var weapon_icon_cell_size := Vector2i(32, 32)
 @export var weapon_icon_columns := 12
 @export var weapon_icon_rows := 9
-@export var weapon_icon_overrides: Dictionary = {}
+@export var weapon_icon_overrides: Dictionary = {
+	"pulse": Vector2i(0, 0),
+	"laser": Vector2i(1, 0),
+	"blackhole": Vector2i(2, 0),
+	"scatter": Vector2i(3, 0),
+	"arc": Vector2i(4, 0),
+	"thermobaric": Vector2i(5, 0),
+	"shock_bomb": Vector2i(6, 0)
+}
 
+@onready var ui_layer: CanvasLayer = $UILayer
 @onready var player: CharacterBody2D = $Player
 @onready var enemy_container: Node2D = $EnemyContainer
 @onready var bullet_container: Node2D = $BulletContainer
@@ -157,6 +167,9 @@ var _effective_spawn_interval_scale := 1.0
 var _active_wave_batches: Array[Dictionary] = []
 var _enemy_entry_by_scene_path: Dictionary = {}
 var _weapon_icon_region_by_id: Dictionary = {}
+var _weapon_cooldown_hud_panel: PanelContainer
+var _weapon_cooldown_hud_list: VBoxContainer
+var _weapon_cooldown_icon_by_id: Dictionary = {}
 
 func _ready() -> void:
 	GameState.load_persistent_state()
@@ -170,10 +183,13 @@ func _ready() -> void:
 	back_to_menu_button.pressed.connect(_on_back_to_menu_pressed)
 	victory_restart_button.pressed.connect(_on_restart_pressed)
 	victory_back_to_menu_button.pressed.connect(_on_back_to_menu_pressed)
-	upgrade_history_button.pressed.connect(_on_toggle_upgrade_history_pressed)
+	if upgrade_history_button != null:
+		upgrade_history_button.visible = false
+		upgrade_history_button.disabled = true
 	_setup_upgrade_buttons()
 	_init_weapon_pool()
 	_init_random_weapon_icon_regions()
+	_setup_weapon_cooldown_hud()
 	_apply_run_modifiers_from_state()
 	if not _weapon_order.is_empty():
 		_unlock_weapon(_weapon_order[0])
@@ -189,6 +205,8 @@ func _ready() -> void:
 	_update_wave_text()
 	_update_progression_text()
 	_update_weapon_text()
+	_update_weapon_cooldown_hud()
+	_center_overlay_panels()
 
 func _exit_tree() -> void:
 	_stop_run_audio()
@@ -350,6 +368,8 @@ func _process(delta: float) -> void:
 		_update_wave_text()
 		_update_progression_text()
 		_update_weapon_text()
+		_update_weapon_cooldown_hud()
+		_reposition_weapon_cooldown_hud()
 		return
 
 	_tick_wave_spawn(delta)
@@ -364,7 +384,127 @@ func _process(delta: float) -> void:
 	_update_wave_text()
 	_update_progression_text()
 	_update_weapon_text()
+	_update_weapon_cooldown_hud()
+	_reposition_weapon_cooldown_hud()
 	_try_open_upgrade_panel()
+
+func _setup_weapon_cooldown_hud() -> void:
+	_weapon_cooldown_icon_by_id.clear()
+	if ui_layer == null:
+		return
+
+	if _weapon_cooldown_hud_panel != null and is_instance_valid(_weapon_cooldown_hud_panel):
+		_weapon_cooldown_hud_panel.queue_free()
+
+	_weapon_cooldown_hud_panel = PanelContainer.new()
+	_weapon_cooldown_hud_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_weapon_cooldown_hud_panel.custom_minimum_size = Vector2(92.0, 240.0)
+	_weapon_cooldown_hud_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_weapon_cooldown_hud_panel.gui_input.connect(_on_weapon_cooldown_hud_gui_input)
+	ui_layer.add_child(_weapon_cooldown_hud_panel)
+
+	_weapon_cooldown_hud_list = VBoxContainer.new()
+	_weapon_cooldown_hud_list.mouse_filter = Control.MOUSE_FILTER_PASS
+	_weapon_cooldown_hud_list.add_theme_constant_override("separation", 8)
+	_weapon_cooldown_hud_panel.add_child(_weapon_cooldown_hud_list)
+	_reposition_weapon_cooldown_hud()
+
+	_sync_weapon_cooldown_hud_entries()
+
+func _on_weapon_cooldown_hud_gui_input(event: InputEvent) -> void:
+	if event == null:
+		return
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.pressed:
+			_on_toggle_upgrade_history_pressed()
+
+func _center_overlay_panels() -> void:
+	_center_panel(upgrade_panel)
+	_center_panel(upgrade_history_panel)
+
+func _center_panel(panel: PanelContainer) -> void:
+	if panel == null:
+		return
+	var viewport_size := get_viewport_rect().size
+	var panel_size := panel.size
+	if panel_size.x <= 1.0 or panel_size.y <= 1.0:
+		panel_size = panel.get_combined_minimum_size()
+	if panel_size.x <= 1.0 or panel_size.y <= 1.0:
+		panel_size = panel.custom_minimum_size
+	if panel_size.x <= 1.0 or panel_size.y <= 1.0:
+		panel_size = Vector2(560.0, 360.0)
+	panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	panel.position = (viewport_size - panel_size) * 0.5
+
+func _reposition_weapon_cooldown_hud() -> void:
+	if _weapon_cooldown_hud_panel == null:
+		return
+	if not is_instance_valid(_weapon_cooldown_hud_panel):
+		return
+	var panel_size := _weapon_cooldown_hud_panel.custom_minimum_size
+	var left_margin := 10.0
+	var top_margin := 10.0
+	var top_offset := top_margin
+	if exp_progress_bar != null and exp_progress_bar.visible:
+		top_offset = maxf(top_offset, exp_progress_bar.position.y + exp_progress_bar.size.y + 10.0)
+	_weapon_cooldown_hud_panel.offset_left = left_margin
+	_weapon_cooldown_hud_panel.offset_right = left_margin + panel_size.x
+	_weapon_cooldown_hud_panel.offset_top = top_offset
+	_weapon_cooldown_hud_panel.offset_bottom = top_offset + panel_size.y
+
+func _sync_weapon_cooldown_hud_entries() -> void:
+	if _weapon_cooldown_hud_list == null:
+		return
+	for child in _weapon_cooldown_hud_list.get_children():
+		child.queue_free()
+	_weapon_cooldown_icon_by_id.clear()
+
+	for weapon_id in _equipped_weapon_ids:
+		var icon_control := WEAPON_COOLDOWN_ICON_SCENE.new() as WeaponCooldownIcon
+		icon_control.configure_icon(_weapon_icon_texture_for_weapon_id(weapon_id), _icon_for_weapon(weapon_id))
+		icon_control.configure_pick_count(_weapon_total_pick_count(weapon_id))
+		_weapon_cooldown_hud_list.add_child(icon_control)
+		_weapon_cooldown_icon_by_id[weapon_id] = icon_control
+
+func _update_weapon_cooldown_hud() -> void:
+	if _weapon_cooldown_hud_list == null:
+		return
+	if _weapon_cooldown_hud_list.get_child_count() != _equipped_weapon_ids.size():
+		_sync_weapon_cooldown_hud_entries()
+
+	for weapon_id in _equipped_weapon_ids:
+		if not _weapon_pool.has(weapon_id):
+			continue
+		var icon_control := _weapon_cooldown_icon_by_id.get(weapon_id, null) as WeaponCooldownIcon
+		if icon_control == null:
+			continue
+		var weapon: Dictionary = _weapon_pool[weapon_id]
+		icon_control.configure_icon(_weapon_icon_texture_for_weapon_id(weapon_id), _icon_for_weapon(weapon_id))
+		icon_control.configure_pick_count(_weapon_total_pick_count(weapon_id))
+		icon_control.set_cooldown(float(weapon.get("cooldown", 0.0)), float(weapon.get("fire_interval", 1.0)), _run_elapsed_seconds)
+
+func _weapon_total_pick_count(weapon_id: String) -> int:
+	if weapon_id == "":
+		return 1
+	var levels := _weapon_upgrade_levels.get(weapon_id, {}) as Dictionary
+	var total_upgrades := 0
+	for level_value in levels.values():
+		total_upgrades += int(level_value)
+	return 1 + max(0, total_upgrades)
+
+func _weapon_icon_texture_for_weapon_id(weapon_id: String) -> Texture2D:
+	if weapon_icon_atlas == null:
+		return null
+	if weapon_id == "":
+		return null
+	if not _weapon_icon_region_by_id.has(weapon_id):
+		return null
+	var region: Rect2i = _weapon_icon_region_by_id[weapon_id]
+	var atlas_texture := AtlasTexture.new()
+	atlas_texture.atlas = weapon_icon_atlas
+	atlas_texture.region = region
+	return atlas_texture
 
 func _setup_upgrade_buttons() -> void:
 	_upgrade_buttons.clear()
@@ -492,18 +632,8 @@ func _weapon_icon_override_cell_for_weapon(weapon_id: String) -> Vector2i:
 	return cell
 
 func _weapon_icon_texture_for_option(option: Dictionary) -> Texture2D:
-	if weapon_icon_atlas == null:
-		return null
 	var weapon_id := String(option.get("weapon_id", "")).strip_edges()
-	if weapon_id == "":
-		return null
-	if not _weapon_icon_region_by_id.has(weapon_id):
-		return null
-	var region: Rect2i = _weapon_icon_region_by_id[weapon_id]
-	var atlas_texture := AtlasTexture.new()
-	atlas_texture.atlas = weapon_icon_atlas
-	atlas_texture.region = region
-	return atlas_texture
+	return _weapon_icon_texture_for_weapon_id(weapon_id)
 
 func _start_wave(wave_index: int) -> void:
 	_current_wave_index = wave_index
@@ -845,10 +975,13 @@ func _tick_weapon(delta: float, weapon_id: String) -> void:
 	weapon.cooldown = float(weapon.cooldown) - delta
 	if float(weapon.cooldown) > 0.0:
 		return
-	_fire_weapon(weapon)
-	weapon.cooldown = float(weapon.fire_interval)
+	var did_fire := _fire_weapon(weapon)
+	if did_fire:
+		weapon.cooldown = float(weapon.fire_interval)
+	else:
+		weapon.cooldown = 0.0
 
-func _fire_weapon(weapon: Dictionary) -> void:
+func _fire_weapon(weapon: Dictionary) -> bool:
 	var nearest_enemy: EnemyBase = null
 	var nearest_distance := INF
 	for child in enemy_container.get_children():
@@ -863,10 +996,10 @@ func _fire_weapon(weapon: Dictionary) -> void:
 			nearest_enemy = enemy
 
 	if nearest_enemy == null:
-		return
+		return false
 
 	if nearest_distance <= 0.0:
-		return
+		return false
 	var base_direction := (nearest_enemy.global_position - player.global_position).normalized()
 	var projectile_count := int(weapon.projectile_count)
 	var spread_degrees := float(weapon.spread_degrees)
@@ -878,25 +1011,26 @@ func _fire_weapon(weapon: Dictionary) -> void:
 
 	if weapon_kind == &"summon":
 		_spawn_black_hole(weapon, nearest_enemy, damage)
-		return
+		return true
 
 	if weapon_kind == &"laser":
 		_fire_laser_weapon(weapon, nearest_enemy, damage)
-		return
+		return true
 
 	if weapon_kind == &"shock":
 		_cast_shock_bomb(weapon, nearest_enemy, base_direction, damage)
-		return
+		return true
 
 	if projectile_count <= 1:
 		_spawn_projectile(base_direction, hit_radius, damage, nearest_enemy, weapon_id)
-		return
+		return true
 
 	var center_index := float(projectile_count - 1) * 0.5
 	for i in projectile_count:
 		var angle_deg := (float(i) - center_index) * spread_degrees
 		var direction := base_direction.rotated(deg_to_rad(angle_deg))
 		_spawn_projectile(direction, hit_radius, damage, nearest_enemy, weapon_id)
+	return true
 
 func _spawn_black_hole(weapon: Dictionary, target_enemy: EnemyBase, damage: float) -> void:
 	var spawn_position := player.global_position + Vector2(0.0, -120.0)
@@ -1582,6 +1716,7 @@ func _on_toggle_upgrade_history_pressed() -> void:
 	upgrade_history_panel.visible = not upgrade_history_panel.visible
 	if not upgrade_history_panel.visible:
 		return
+	_center_overlay_panels()
 	if _initial_weapon_id != "" and _equipped_weapon_ids.has(_initial_weapon_id):
 		_selected_history_weapon_id = _initial_weapon_id
 	elif not _equipped_weapon_ids.is_empty():
@@ -1700,6 +1835,7 @@ func _try_open_upgrade_panel() -> void:
 	_is_upgrade_open = true
 	GameState.is_paused = true
 	upgrade_panel.visible = true
+	_center_overlay_panels()
 	_refresh_upgrade_options()
 
 func _refresh_upgrade_options() -> void:
