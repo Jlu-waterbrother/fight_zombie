@@ -36,9 +36,20 @@ var _has_pending_config := false
 var _base_modulate := Color.WHITE
 var _hit_feedback_tween: Tween
 var _death_tween: Tween
+var _health_fill_style := StyleBoxFlat.new()
+var _knockback_velocity := Vector2.ZERO
+var _knockback_damping := 980.0
+var _stun_time_left := 0.0
+var _slow_time_left := 0.0
+var _slow_factor := 1.0
 
 func _ready() -> void:
 	_base_modulate = modulate
+	_health_fill_style.corner_radius_top_left = 2
+	_health_fill_style.corner_radius_top_right = 2
+	_health_fill_style.corner_radius_bottom_left = 2
+	_health_fill_style.corner_radius_bottom_right = 2
+	health_bar.add_theme_stylebox_override("fill", _health_fill_style)
 	health_component.died.connect(_on_health_died)
 	if _has_pending_config:
 		_apply_runtime_config(_pending_attack_line_y, _pending_attack_damage, _pending_max_health)
@@ -67,6 +78,25 @@ func _physics_process(delta: float) -> void:
 		_set_enemy_animation_state(ANIM_IDLE)
 		return
 
+	if _knockback_velocity.length_squared() > 0.001:
+		global_position += _knockback_velocity * delta
+		_knockback_velocity = _knockback_velocity.move_toward(Vector2.ZERO, _knockback_damping * delta)
+
+	if _stun_time_left > 0.0:
+		_stun_time_left -= delta
+	if _slow_time_left > 0.0:
+		_slow_time_left -= delta
+		if _slow_time_left <= 0.0:
+			_slow_time_left = 0.0
+			_slow_factor = 1.0
+
+	if _stun_time_left > 0.0:
+		_is_attacking = false
+		velocity = Vector2.ZERO
+		_set_enemy_animation_state(ANIM_HIT)
+		move_and_slide()
+		return
+
 	if _is_attacking:
 		velocity = Vector2.ZERO
 		move_and_slide()
@@ -74,7 +104,7 @@ func _physics_process(delta: float) -> void:
 		_tick_attack(delta)
 		return
 
-	velocity = Vector2.DOWN * move_speed
+	velocity = Vector2.DOWN * move_speed * _slow_factor
 	move_and_slide()
 	_set_enemy_animation_state(ANIM_MOVE)
 
@@ -111,7 +141,7 @@ func is_defeated() -> bool:
 	return _is_dead
 
 func _tick_attack(delta: float) -> void:
-	_attack_cooldown -= delta
+	_attack_cooldown -= delta * _slow_factor
 	if _attack_cooldown > 0.0:
 		return
 	_attack_cooldown = maxf(0.1, attack_interval)
@@ -131,7 +161,17 @@ func _on_health_died() -> void:
 func _refresh_health_bar() -> void:
 	health_bar.max_value = health_component.max_health
 	health_bar.value = health_component.current_health
+	var ratio := 0.0
+	if health_component.max_health > 0.0:
+		ratio = clampf(health_component.current_health / health_component.max_health, 0.0, 1.0)
+	_health_fill_style.bg_color = _health_bar_color_for_ratio(ratio)
 	health_bar.visible = health_component.current_health < health_component.max_health and not _is_dead
+
+func _health_bar_color_for_ratio(ratio: float) -> Color:
+	var t := clampf(ratio, 0.0, 1.0)
+	if t >= 0.5:
+		return Color(1.0, 1.0, 0.2).lerp(Color(0.2, 0.95, 0.3), (t - 0.5) * 2.0)
+	return Color(1.0, 0.2, 0.2).lerp(Color(1.0, 1.0, 0.2), t * 2.0)
 
 func _show_damage_popup(damage: float) -> void:
 	var damage_label := Label.new()
@@ -244,9 +284,53 @@ func _apply_runtime_config(next_attack_line_y: float, next_attack_damage: float,
 	_is_dead = false
 	_is_attacking = false
 	_attack_cooldown = 0.0
+	_knockback_velocity = Vector2.ZERO
+	_stun_time_left = 0.0
+	_slow_time_left = 0.0
+	_slow_factor = 1.0
 	scale = Vector2.ONE
 	modulate = _base_modulate
 	_current_anim_state = &""
 	_refresh_health_bar()
 	_update_visual_source()
 	_set_enemy_animation_state(ANIM_IDLE, true)
+
+func apply_knockback(direction: Vector2, distance: float, duration: float = 0.16) -> void:
+	if _is_dead:
+		return
+	var safe_duration := maxf(0.05, duration)
+	var safe_distance := maxf(0.0, distance)
+	if safe_distance <= 0.0:
+		return
+	var dir := direction
+	if dir.length_squared() <= 0.0001:
+		dir = Vector2.UP
+	else:
+		dir = dir.normalized()
+	var speed := safe_distance / safe_duration
+	_knockback_velocity += dir * speed
+	_knockback_damping = maxf(220.0, speed / safe_duration)
+	if global_position.y < attack_line_y:
+		_is_attacking = false
+
+func apply_stun(duration: float) -> void:
+	if _is_dead:
+		return
+	var stun_duration := maxf(0.0, duration)
+	if stun_duration <= 0.0:
+		return
+	_stun_time_left = maxf(_stun_time_left, stun_duration)
+	_is_attacking = false
+
+func apply_slow(multiplier: float, duration: float) -> void:
+	if _is_dead:
+		return
+	var slow_duration := maxf(0.0, duration)
+	if slow_duration <= 0.0:
+		return
+	var factor := clampf(multiplier, 0.15, 1.0)
+	if _slow_time_left <= 0.0:
+		_slow_factor = factor
+	else:
+		_slow_factor = minf(_slow_factor, factor)
+	_slow_time_left = maxf(_slow_time_left, slow_duration)

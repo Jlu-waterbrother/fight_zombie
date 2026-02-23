@@ -3,8 +3,8 @@ class_name HealthComponent
 
 signal died
 
-@export var max_health := 100.0
-var current_health := 100.0
+@export var max_health := 2000.0
+var current_health := 2000.0
 
 func _ready() -> void:
     current_health = max_health

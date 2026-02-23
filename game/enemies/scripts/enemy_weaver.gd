@@ -3,7 +3,7 @@ class_name EnemyWeaver
 
 @export var weave_amplitude := 90.0
 @export var weave_frequency := 2.2
-@export var horizontal_adjust_speed := 4.0
+@export var horizontal_adjust_speed := 2.0
 
 var _spawn_x := 0.0
 var _weave_elapsed := 0.0

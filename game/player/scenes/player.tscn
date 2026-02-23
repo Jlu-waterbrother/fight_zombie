@@ -1,15 +1,20 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene format=3 uid="uid://duara1gnsiyns"]
 
-[ext_resource type="Script" path="res://game/player/scripts/player_controller.gd" id="1"]
-[ext_resource type="Script" path="res://core/components/health_component.gd" id="2"]
+[ext_resource type="Script" uid="uid://cpgg0ovreucoa" path="res://game/player/scripts/player_controller.gd" id="1"]
+[ext_resource type="Script" uid="uid://ibxndapr141d" path="res://core/components/health_component.gd" id="2"]
+[ext_resource type="SpriteFrames" uid="uid://bsm203fbdabgg" path="res://assets/art/sprite/sprite_frame/tank_soldier.tres" id="3_xcmey"]
 
-[node name="Player" type="CharacterBody2D"]
+[node name="Player" type="CharacterBody2D" unique_id=688791560]
 script = ExtResource("1")
 
-[node name="HealthComponent" type="Node" parent="."]
+[node name="HealthComponent" type="Node" parent="." unique_id=1863905555]
 script = ExtResource("2")
-max_health = 100.0
 
-[node name="Visual" type="Polygon2D" parent="."]
+[node name="Visual" type="Polygon2D" parent="." unique_id=1683486601]
 color = Color(0.2, 0.6, 1, 1)
 polygon = PackedVector2Array(-16, -16, 16, -16, 16, 16, -16, 16)
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="." unique_id=727479891]
+position = Vector2(0, -8)
+scale = Vector2(1.2, 1.2)
+sprite_frames = ExtResource("3_xcmey")

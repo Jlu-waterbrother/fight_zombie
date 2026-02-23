@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="WeaponTable" format=3 uid="uid://lg5bisxkhe82"]
+
+[ext_resource type="Script" uid="uid://cva0fkauok3i5" path="res://game/weapons/scripts/weapon_table.gd" id="1"]
+[ext_resource type="Script" uid="uid://ctnq7m35hy3mx" path="res://game/weapons/scripts/weapon_entry.gd" id="1_a6yut"]
+[ext_resource type="Resource" uid="uid://bn58cd3ps0s7k" path="res://game/weapons/data/pulse_weapon.tres" id="2"]
+[ext_resource type="Resource" uid="uid://yf2q2xwbrjl1" path="res://game/weapons/data/laser_weapon.tres" id="3"]
+[ext_resource type="Resource" uid="uid://xcg31hdd43pl" path="res://game/weapons/data/summon_blackhole_weapon.tres" id="4"]
+[ext_resource type="Resource" uid="uid://dwyn0ip04bjnf" path="res://game/weapons/data/scatter_weapon.tres" id="5"]
+[ext_resource type="Resource" uid="uid://d3ainwpvt6cks" path="res://game/weapons/data/arc_weapon.tres" id="6"]
+[ext_resource type="Resource" path="res://game/weapons/data/thermobaric_weapon.tres" id="7"]
+[ext_resource type="Resource" path="res://game/weapons/data/shock_bomb_weapon.tres" id="8"]
+
+[resource]
+script = ExtResource("1")
+entries = Array[ExtResource("1_a6yut")]([ExtResource("2"), ExtResource("3"), ExtResource("4"), ExtResource("5"), ExtResource("6"), ExtResource("7"), ExtResource("8")])

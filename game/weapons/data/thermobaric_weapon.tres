@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="WeaponEntry" format=3]
+
+[ext_resource type="Script" path="res://game/weapons/scripts/weapon_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+weapon_id = "thermobaric"
+weapon_name = "温压弹"
+weapon_kind = &"projectile"
+fire_interval = 1.15
+fire_interval_min = 0.42
+projectile_count = 1
+spread_degrees = 0.0
+hit_radius = 24.0
+damage = 48.0
+projectile_penetration = 0
+explosion_radius = 86.0
+explosion_damage_ratio = 0.72
+knockback_distance = 92.0
+burn_damage = 2.8
+burn_ticks = 2
+burn_interval = 0.34

@@ -1,0 +1,87 @@
+[gd_resource type="Resource" script_class="EnemyTable" format=3 uid="uid://c15tuk8p0soh"]
+
+[ext_resource type="Script" uid="uid://c2g10yi3me4bc" path="res://game/enemies/scripts/enemy_table.gd" id="1"]
+[ext_resource type="Script" uid="uid://dtjxnjn5vdxrq" path="res://game/enemies/scripts/enemy_entry.gd" id="2"]
+[ext_resource type="PackedScene" path="res://game/enemies/scenes/zombie_basic.tscn" id="3"]
+[ext_resource type="PackedScene" uid="uid://byh377cx6xgtl" path="res://game/enemies/scenes/zombie_runner.tscn" id="4"]
+[ext_resource type="PackedScene" uid="uid://uui8blkbfpyx" path="res://game/enemies/scenes/zombie_weaver.tscn" id="5"]
+[ext_resource type="PackedScene" uid="uid://dtkk4d8vmglv8" path="res://game/enemies/scenes/zombie_tank.tscn" id="6"]
+[ext_resource type="PackedScene" uid="uid://w0a7m01s533j" path="res://game/enemies/scenes/zombie_berserker.tscn" id="7"]
+[ext_resource type="PackedScene" path="res://game/enemies/scenes/zombie_boss_brute.tscn" id="8"]
+[ext_resource type="PackedScene" path="res://game/enemies/scenes/zombie_boss_overlord.tscn" id="9"]
+
+[sub_resource type="Resource" id="EnemyEntry_basic"]
+script = ExtResource("2")
+enemy_scene = ExtResource("3")
+audio_key = &"basic"
+base_move_speed = 55.0
+
+[sub_resource type="Resource" id="EnemyEntry_runner"]
+script = ExtResource("2")
+enemy_id = "runner"
+enemy_name = "疾跑僵尸"
+enemy_scene = ExtResource("4")
+audio_key = &"runner"
+base_max_health = 52.0
+base_move_speed = 75.0
+base_attack_damage = 16.0
+attack_interval = 0.75
+
+[sub_resource type="Resource" id="EnemyEntry_weaver"]
+script = ExtResource("2")
+enemy_id = "weaver"
+enemy_name = "织网僵尸"
+enemy_scene = ExtResource("5")
+audio_key = &"weaver"
+base_max_health = 68.0
+base_move_speed = 40.0
+base_attack_damage = 22.0
+attack_interval = 0.95
+
+[sub_resource type="Resource" id="EnemyEntry_tank"]
+script = ExtResource("2")
+enemy_id = "tank"
+enemy_name = "重装僵尸"
+enemy_scene = ExtResource("6")
+audio_key = &"tank"
+base_max_health = 120.0
+base_move_speed = 40.0
+base_attack_damage = 30.0
+attack_interval = 1.08
+
+[sub_resource type="Resource" id="EnemyEntry_berserker"]
+script = ExtResource("2")
+enemy_id = "berserker"
+enemy_name = "狂暴僵尸"
+enemy_scene = ExtResource("7")
+audio_key = &"berserker"
+base_max_health = 90.0
+base_move_speed = 65.0
+base_attack_damage = 28.0
+attack_interval = 0.78
+
+[sub_resource type="Resource" id="EnemyEntry_boss_brute"]
+script = ExtResource("2")
+enemy_id = "boss_brute"
+enemy_name = "Boss 巨力"
+enemy_scene = ExtResource("8")
+audio_key = &"boss_brute"
+base_max_health = 220.0
+base_move_speed = 35.0
+base_attack_damage = 40.0
+attack_interval = 1.2
+
+[sub_resource type="Resource" id="EnemyEntry_boss_overlord"]
+script = ExtResource("2")
+enemy_id = "boss_overlord"
+enemy_name = "Boss 主宰"
+enemy_scene = ExtResource("9")
+audio_key = &"boss_overlord"
+base_max_health = 260.0
+base_move_speed = 40.0
+base_attack_damage = 45.0
+attack_interval = 1.15
+
+[resource]
+script = ExtResource("1")
+entries = Array[ExtResource("2")]([SubResource("EnemyEntry_basic"), SubResource("EnemyEntry_runner"), SubResource("EnemyEntry_weaver"), SubResource("EnemyEntry_tank"), SubResource("EnemyEntry_berserker"), SubResource("EnemyEntry_boss_brute"), SubResource("EnemyEntry_boss_overlord")])

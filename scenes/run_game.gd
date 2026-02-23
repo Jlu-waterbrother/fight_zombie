@@ -10,13 +10,8 @@ const AOE_FIELD_SCENE := preload("res://game/weapons/scenes/aoe_field.tscn")
 const DEFAULT_WAVE_TABLE := preload("res://game/waves/data/wave_table_default.tres")
 const BOSS_WAVE_10_SCENE := preload("res://game/enemies/scenes/zombie_boss_brute.tscn")
 const BOSS_WAVE_20_SCENE := preload("res://game/enemies/scenes/zombie_boss_overlord.tscn")
-const DEFAULT_WEAPON_RESOURCES: Array[WeaponEntry] = [
-	preload("res://game/weapons/data/pulse_weapon.tres"),
-	preload("res://game/weapons/data/laser_weapon.tres"),
-	preload("res://game/weapons/data/summon_blackhole_weapon.tres"),
-	preload("res://game/weapons/data/scatter_weapon.tres"),
-	preload("res://game/weapons/data/arc_weapon.tres"),
-]
+const DEFAULT_WEAPON_TABLE := preload("res://game/weapons/data/weapon_table_default.tres")
+const DEFAULT_ENEMY_TABLE := preload("res://game/enemies/data/enemy_table_default.tres")
 const UPGRADE_OPTION_COUNT := 3
 const PREFERRED_WEAPON_COUNT := 3
 const OPTION_UNLOCK_WEAPON: StringName = &"unlock_weapon"
@@ -41,6 +36,10 @@ const UPGRADE_SUMMON_DURATION: StringName = &"summon_duration"
 const UPGRADE_SUMMON_TICK_RATE: StringName = &"summon_tick_rate"
 const UPGRADE_SUMMON_EXTRA_FIELD: StringName = &"summon_extra_field"
 const UPGRADE_SUMMON_IMPLOSION: StringName = &"summon_implosion"
+const UPGRADE_THERMOBARIC_KNOCKBACK: StringName = &"thermobaric_knockback"
+const UPGRADE_THERMOBARIC_BURN: StringName = &"thermobaric_burn"
+const UPGRADE_SHOCK_STUN_DURATION: StringName = &"shock_stun_duration"
+const UPGRADE_SHOCK_AFTER_SLOW: StringName = &"shock_after_slow"
 const SFX_KEY_SHOOT: StringName = &"run_shoot"
 const SFX_KEY_HIT: StringName = &"run_hit"
 const SFX_KEY_LEVEL_UP: StringName = &"run_level_up"
@@ -57,7 +56,9 @@ const SFX_KEY_LEVEL_UP: StringName = &"run_level_up"
 @export var enemy_health_growth_per_wave := 0.12
 @export var inter_wave_delay := 1.8
 @export var wave_table: WaveTable = DEFAULT_WAVE_TABLE
+@export var enemy_table: EnemyTable = DEFAULT_ENEMY_TABLE
 @export var max_equipped_weapons := 3
+@export var weapon_table: WeaponTable = DEFAULT_WEAPON_TABLE
 @export var weapon_entries: Array[WeaponEntry] = []
 @export var projectile_despawn_margin := 40.0
 @export var base_settlement_gold := 20
@@ -125,6 +126,7 @@ var _current_exp := 0
 var _next_level_exp := 40
 var _pending_level_ups := 0
 var _is_upgrade_open := false
+var _upgrade_pick_count := 0
 var _upgrade_options: Array[Dictionary] = []
 var _upgrade_buttons: Array[Button] = []
 var _upgrade_card_views: Array[Dictionary] = []
@@ -147,6 +149,7 @@ var _effective_enemies_per_wave_growth := 4
 var _effective_enemy_count_scale := 1.0
 var _effective_spawn_interval_scale := 1.0
 var _active_wave_batches: Array[Dictionary] = []
+var _enemy_entry_by_scene_path: Dictionary = {}
 
 func _ready() -> void:
 	GameState.load_persistent_state()
@@ -228,6 +231,9 @@ func _shoot_sfx_stream_for_weapon(weapon_id: String) -> AudioStream:
 	return shoot_sfx_stream
 
 func _enemy_audio_key_from_scene(enemy_scene: PackedScene) -> StringName:
+	var entry := _enemy_entry_for_scene(enemy_scene)
+	if entry != null and entry.audio_key != &"":
+		return entry.audio_key
 	if enemy_scene == null:
 		return &"default"
 	var path := String(enemy_scene.resource_path)
@@ -295,6 +301,32 @@ func _hit_sfx_stream_for_enemy_key(enemy_key: StringName) -> AudioStream:
 			if hit_sfx_boss_overlord_stream != null:
 				return hit_sfx_boss_overlord_stream
 	return hit_sfx_stream
+
+func _enemy_entry_for_scene(enemy_scene: PackedScene) -> EnemyEntry:
+	if enemy_scene == null:
+		return null
+	if _enemy_entry_by_scene_path.is_empty():
+		_build_enemy_entry_lookup()
+	var scene_path := String(enemy_scene.resource_path)
+	if scene_path == "":
+		return null
+	if not _enemy_entry_by_scene_path.has(scene_path):
+		return null
+	return _enemy_entry_by_scene_path[scene_path] as EnemyEntry
+
+func _build_enemy_entry_lookup() -> void:
+	_enemy_entry_by_scene_path.clear()
+	if enemy_table == null:
+		return
+	for entry in enemy_table.entries:
+		if entry == null:
+			continue
+		if entry.enemy_scene == null:
+			continue
+		var scene_path := String(entry.enemy_scene.resource_path)
+		if scene_path == "":
+			continue
+		_enemy_entry_by_scene_path[scene_path] = entry
 
 func _play_level_up_sfx() -> void:
 	AudioService.play_sfx_with_cooldown(SFX_KEY_LEVEL_UP, level_up_sfx_stream, 0.0, level_up_sfx_volume_db)
@@ -608,14 +640,25 @@ func _spawn_enemy_from_batch(batch: WaveSpawnBatch) -> void:
 	var enemy := enemy_scene.instantiate() as EnemyBase
 	if enemy == null:
 		return
+	var enemy_entry := _enemy_entry_for_scene(enemy_scene)
+	var base_max_health := enemy_base_max_health
+	var base_attack_damage := enemy_contact_damage
+	var base_move_speed := enemy.move_speed
+	if enemy_entry != null:
+		base_max_health = maxf(1.0, enemy_entry.base_max_health)
+		base_attack_damage = maxf(0.1, enemy_entry.base_attack_damage)
+		base_move_speed = maxf(25.0, enemy_entry.base_move_speed)
+		enemy.attack_interval = maxf(0.1, enemy_entry.attack_interval)
+		enemy.hit_flash_duration = maxf(0.01, enemy_entry.hit_flash_duration)
+		enemy.death_fade_duration = maxf(0.05, enemy_entry.death_fade_duration)
 
 	var wave_health_multiplier := 1.0 + float(max(_current_wave_index - 1, 0)) * enemy_health_growth_per_wave
-	var enemy_max_health := enemy_base_max_health * wave_health_multiplier * health_multiplier
-	var enemy_attack_damage := enemy_contact_damage * attack_multiplier
+	var enemy_max_health := base_max_health * wave_health_multiplier * health_multiplier
+	var enemy_attack_damage := base_attack_damage * attack_multiplier
 
 	enemy.attack_line_y = player.global_position.y
 	enemy.attack_damage = enemy_attack_damage
-	enemy.move_speed = maxf(25.0, enemy.move_speed * maxf(0.3, enemy_move_speed_scale))
+	enemy.move_speed = maxf(25.0, base_move_speed * maxf(0.3, enemy_move_speed_scale))
 	enemy.set_meta("audio_enemy_key", String(_enemy_audio_key_from_scene(enemy_scene)))
 	enemy.attack_tick.connect(_on_enemy_attack_tick)
 	enemy.defeated.connect(_on_enemy_defeated)
@@ -628,11 +671,16 @@ func _spawn_enemy_from_batch(batch: WaveSpawnBatch) -> void:
 func _init_weapon_pool() -> void:
 	_weapon_pool.clear()
 	_weapon_order.clear()
-	var entries: Array[WeaponEntry] = weapon_entries
-	if entries.is_empty():
-		entries = DEFAULT_WEAPON_RESOURCES
+	var entries: Array = []
+	if weapon_table != null and not weapon_table.entries.is_empty():
+		entries = weapon_table.entries
+	elif not weapon_entries.is_empty():
+		entries = weapon_entries
+	elif DEFAULT_WEAPON_TABLE != null and not DEFAULT_WEAPON_TABLE.entries.is_empty():
+		entries = DEFAULT_WEAPON_TABLE.entries
 
-	for entry in entries:
+	for entry_value in entries:
+		var entry := entry_value as WeaponEntry
 		if entry == null:
 			continue
 		var entry_id := String(entry.weapon_id).strip_edges()
@@ -651,11 +699,22 @@ func _init_weapon_pool() -> void:
 			"spread_degrees": float(entry.spread_degrees),
 			"hit_radius": float(entry.hit_radius),
 			"damage": float(entry.damage),
-			"projectile_penetration": 0,
+			"projectile_penetration": max(0, int(entry.projectile_penetration)),
 			"split_count": 0,
 			"split_damage_ratio": 0.52,
-			"explosion_radius": 0.0,
-			"explosion_damage_ratio": 0.0,
+			"explosion_radius": maxf(0.0, float(entry.explosion_radius)),
+			"explosion_damage_ratio": maxf(0.0, float(entry.explosion_damage_ratio)),
+			"knockback_distance": maxf(0.0, float(entry.knockback_distance)),
+			"burn_damage": maxf(0.0, float(entry.burn_damage)),
+			"burn_ticks": max(0, int(entry.burn_ticks)),
+			"burn_interval": maxf(0.05, float(entry.burn_interval)),
+			"stun_duration": maxf(0.0, float(entry.stun_duration)),
+			"slow_factor": clampf(float(entry.slow_factor), 0.15, 1.0),
+			"slow_duration": maxf(0.0, float(entry.slow_duration)),
+			"field_duration": maxf(0.0, float(entry.field_duration)),
+			"field_tick_interval": maxf(0.05, float(entry.field_tick_interval)),
+			"field_radius": maxf(0.0, float(entry.field_radius)),
+			"extra_attack_spacing": maxf(6.0, float(entry.extra_attack_spacing)),
 			"laser_width": float(entry.laser_width),
 			"laser_duration": float(entry.laser_duration),
 			"laser_chain_count": 0,
@@ -736,6 +795,10 @@ func _fire_weapon(weapon: Dictionary) -> void:
 
 	if weapon_kind == &"laser":
 		_fire_laser_weapon(weapon, nearest_enemy, damage)
+		return
+
+	if weapon_kind == &"shock":
+		_cast_shock_bomb(weapon, nearest_enemy, base_direction, damage)
 		return
 
 	if projectile_count <= 1:
@@ -828,6 +891,100 @@ func _spawn_laser_line(start_pos: Vector2, end_pos: Vector2, width: float, durat
 	tween.tween_property(line, "modulate:a", 0.0, duration)
 	tween.finished.connect(line.queue_free)
 
+func _cast_shock_bomb(weapon: Dictionary, target_enemy: EnemyBase, forward_direction: Vector2, damage: float) -> void:
+	if target_enemy == null:
+		return
+	if not is_instance_valid(target_enemy):
+		return
+	var blast_count : int = max(1, int(weapon.get("projectile_count", 1)))
+	var spacing := maxf(6.0, float(weapon.get("extra_attack_spacing", 24.0)))
+	var center := target_enemy.global_position
+	var source_weapon_id := StringName(String(weapon.get("id", "shock_bomb")))
+	for idx in blast_count:
+		var blast_center := center + forward_direction * spacing * float(idx)
+		_apply_shock_blast(weapon, blast_center, damage, source_weapon_id)
+
+func _apply_shock_blast(weapon: Dictionary, center: Vector2, damage: float, source_weapon_id: StringName) -> void:
+	var blast_radius := maxf(12.0, float(weapon.get("hit_radius", 56.0)))
+	var stun_duration := maxf(0.0, float(weapon.get("stun_duration", 0.0)))
+	var slow_factor := clampf(float(weapon.get("slow_factor", 1.0)), 0.15, 1.0)
+	var slow_duration := maxf(0.0, float(weapon.get("slow_duration", 0.0)))
+	var info := DamageInfo.from_values(maxf(0.0, damage), &"projectile", source_weapon_id)
+
+	for child in enemy_container.get_children():
+		var enemy := child as EnemyBase
+		if enemy == null:
+			continue
+		if enemy.is_defeated():
+			continue
+		if enemy.global_position.distance_to(center) > blast_radius:
+			continue
+		_apply_damage_to_enemy(enemy, info)
+		if stun_duration > 0.0:
+			enemy.apply_stun(stun_duration)
+		if slow_duration > 0.0 and slow_factor < 1.0:
+			_apply_shock_after_stun_slow(enemy, slow_factor, slow_duration, stun_duration)
+
+	_spawn_shock_slow_field(weapon, center)
+
+func _apply_shock_after_stun_slow(target_enemy: EnemyBase, slow_factor: float, slow_duration: float, delay: float) -> void:
+	if target_enemy == null:
+		return
+	if slow_duration <= 0.0:
+		return
+	var timer := get_tree().create_timer(maxf(0.0, delay))
+	timer.timeout.connect(func() -> void:
+		if target_enemy == null:
+			return
+		if not is_instance_valid(target_enemy):
+			return
+		if target_enemy.is_defeated():
+			return
+		target_enemy.apply_slow(slow_factor, slow_duration)
+	)
+
+func _spawn_shock_slow_field(weapon: Dictionary, center: Vector2) -> void:
+	var field_duration := maxf(0.0, float(weapon.get("field_duration", 0.0)))
+	if field_duration <= 0.0:
+		return
+	var field_radius := maxf(8.0, float(weapon.get("field_radius", float(weapon.get("hit_radius", 56.0)) * 1.5)))
+	var field_tick := maxf(0.05, float(weapon.get("field_tick_interval", 0.24)))
+	var slow_factor := clampf(float(weapon.get("slow_factor", 1.0)), 0.15, 1.0)
+	var slow_duration := maxf(0.05, float(weapon.get("slow_duration", 0.0)))
+	if slow_factor >= 1.0:
+		return
+	var field := AOE_FIELD_SCENE.instantiate() as AOEFieldRuntime
+	field.global_position = center
+	field.configure(field_radius, field_tick, field_duration, null)
+	field.modulate = Color(0.64, 0.92, 1.0, 0.52)
+	field.set_meta("slow_factor", slow_factor)
+	field.set_meta("slow_duration", slow_duration)
+	field.pulse.connect(_on_shock_field_pulse.bind(field))
+	field.expired.connect(_on_shock_field_expired)
+	summon_container.add_child(field)
+
+func _on_shock_field_pulse(position: Vector2, radius: float, field: AOEFieldRuntime) -> void:
+	if field == null:
+		return
+	if not is_instance_valid(field):
+		return
+	var slow_factor := clampf(float(field.get_meta("slow_factor", 1.0)), 0.15, 1.0)
+	var slow_duration := maxf(0.05, float(field.get_meta("slow_duration", 0.2)))
+	if slow_factor >= 1.0:
+		return
+	for child in enemy_container.get_children():
+		var enemy := child as EnemyBase
+		if enemy == null:
+			continue
+		if enemy.is_defeated():
+			continue
+		if enemy.global_position.distance_to(position) > radius:
+			continue
+		enemy.apply_slow(slow_factor, slow_duration)
+
+func _on_shock_field_expired(_field: AOEFieldRuntime) -> void:
+	pass
+
 func _spawn_projectile(direction: Vector2, hit_radius: float, damage: float, target_enemy: EnemyBase, weapon_id: String, spawn_position: Vector2 = Vector2.INF, can_split: bool = true, penetration_override: int = -1) -> void:
 	var bullet := BULLET_SCENE.instantiate() as ProjectileRuntime
 	if spawn_position == Vector2.INF:
@@ -848,6 +1005,10 @@ func _spawn_projectile(direction: Vector2, hit_radius: float, damage: float, tar
 	bullet.set_meta("split_damage_ratio", float(weapon.get("split_damage_ratio", 0.52)))
 	bullet.set_meta("explosion_radius", float(weapon.get("explosion_radius", 0.0)))
 	bullet.set_meta("explosion_damage_ratio", float(weapon.get("explosion_damage_ratio", 0.0)))
+	bullet.set_meta("knockback_distance", float(weapon.get("knockback_distance", 0.0)))
+	bullet.set_meta("burn_damage", float(weapon.get("burn_damage", 0.0)))
+	bullet.set_meta("burn_ticks", int(weapon.get("burn_ticks", 0)))
+	bullet.set_meta("burn_interval", float(weapon.get("burn_interval", 0.35)))
 	bullet.set_meta("can_split", can_split)
 	bullet.set_meta("hit_enemy_ids", PackedInt64Array())
 	bullet.configure_display_profile(_projectile_display_profile_for_weapon(weapon_id, not can_split))
@@ -907,6 +1068,18 @@ func _projectile_display_profile_for_weapon(weapon_id: String, is_split_child: b
 			profile["despawn_effect_scale"] = 0.88
 			profile["impact_effect_shape"] = PackedVector2Array([Vector2(-2,-8),Vector2(2,-3), Vector2(0,-1),Vector2(5,4), Vector2(1,3),Vector2(-1,8), Vector2(-4,3),Vector2(-1,2)])
 			profile["despawn_effect_shape"] = PackedVector2Array([Vector2(0,-6),Vector2(4,-1), Vector2(2,4),Vector2(-2,4), Vector2(-4,-1)])
+		"thermobaric":
+			profile["color"] = Color(1.0, 0.48, 0.2, 1.0)
+			profile["impact_color"] = Color(1.0, 0.62, 0.28, 0.96)
+			profile["shape_points"] = PackedVector2Array([Vector2(0,-7),Vector2(6,-1), Vector2(5,5),Vector2(-5,5), Vector2(-6,-1)])
+			profile["trail_enabled"] = true
+			profile["trail_color"] = Color(1.0, 0.56, 0.22, 0.56)
+			profile["trail_amount"] = 12
+			profile["trail_lifetime"] = 0.18
+			profile["trail_scale"] = 0.7
+			profile["impact_effect_scale"] = 1.35
+			profile["despawn_effect_scale"] = 0.92
+			profile["impact_effect_shape"] = PackedVector2Array([Vector2(0,-10),Vector2(5,-6), Vector2(9,0),Vector2(5,6), Vector2(0,10),Vector2(-5,6), Vector2(-9,0),Vector2(-5,-6)])
 		_:
 			pass
 
@@ -1066,9 +1239,12 @@ func _record_bullet_hit_enemy(bullet: ProjectileRuntime, enemy: EnemyBase) -> vo
 func _trigger_projectile_special_effects(bullet: ProjectileRuntime, hit_enemy: EnemyBase, damage: float, source_weapon_id: StringName) -> void:
 	var explosion_radius := float(bullet.get_meta("explosion_radius", 0.0))
 	var explosion_ratio := float(bullet.get_meta("explosion_damage_ratio", 0.0))
-	if explosion_radius > 0.0 and explosion_ratio > 0.0:
+	if source_weapon_id != &"thermobaric" and explosion_radius > 0.0 and explosion_ratio > 0.0:
 		var splash_damage := damage * explosion_ratio
 		_apply_area_damage(hit_enemy.global_position, explosion_radius, splash_damage, &"projectile", source_weapon_id)
+
+	if source_weapon_id == &"thermobaric":
+		_apply_thermobaric_blast(bullet, hit_enemy.global_position, damage, source_weapon_id)
 
 	if not bool(bullet.get_meta("can_split", true)):
 		return
@@ -1086,6 +1262,66 @@ func _trigger_projectile_special_effects(bullet: ProjectileRuntime, hit_enemy: E
 		var angle_deg := (float(index) - center_index) * spread
 		var split_direction := bullet.direction.rotated(deg_to_rad(angle_deg))
 		_spawn_projectile(split_direction, hit_radius, split_damage, null, String(source_weapon_id), hit_enemy.global_position, false, 0)
+
+func _apply_thermobaric_blast(bullet: ProjectileRuntime, center: Vector2, base_damage: float, source_weapon_id: StringName) -> void:
+	if bullet == null:
+		return
+	var blast_radius := maxf(float(bullet.get_meta("explosion_radius", 0.0)), float(bullet.get_meta("hit_radius", 18.0)) * 1.8)
+	if blast_radius <= 0.0:
+		return
+	var blast_ratio := float(bullet.get_meta("explosion_damage_ratio", 0.0))
+	if blast_ratio <= 0.0:
+		blast_ratio = 0.72
+	var blast_damage := base_damage * blast_ratio
+	var knockback_distance := maxf(0.0, float(bullet.get_meta("knockback_distance", 0.0)))
+	var burn_damage := maxf(0.0, float(bullet.get_meta("burn_damage", 0.0)))
+	var burn_ticks : int = max(0, int(bullet.get_meta("burn_ticks", 0)))
+	var burn_interval := maxf(0.05, float(bullet.get_meta("burn_interval", 0.35)))
+
+	for child in enemy_container.get_children():
+		var enemy := child as EnemyBase
+		if enemy == null:
+			continue
+		if enemy.is_defeated():
+			continue
+		var to_enemy := enemy.global_position - center
+		var distance := to_enemy.length()
+		if distance > blast_radius:
+			continue
+
+		var info := DamageInfo.from_values(blast_damage, &"projectile", source_weapon_id)
+		_apply_damage_to_enemy(enemy, info)
+
+		if knockback_distance > 0.0:
+			var knock_dir := to_enemy.normalized() if distance > 0.001 else -bullet.direction.normalized()
+			var falloff := 1.0 - clampf(distance / blast_radius, 0.0, 1.0) * 0.35
+			enemy.apply_knockback(knock_dir, knockback_distance * falloff)
+
+		if burn_damage > 0.0 and burn_ticks > 0:
+			_apply_thermobaric_burn_tick(enemy, burn_damage, burn_ticks, burn_interval, source_weapon_id)
+
+func _apply_thermobaric_burn_tick(target_enemy: EnemyBase, burn_damage: float, ticks_left: int, interval: float, source_weapon_id: StringName) -> void:
+	if ticks_left <= 0:
+		return
+	if target_enemy == null:
+		return
+	if not is_instance_valid(target_enemy):
+		return
+	if target_enemy.is_defeated():
+		return
+
+	var timer := get_tree().create_timer(interval)
+	timer.timeout.connect(func() -> void:
+		if target_enemy == null:
+			return
+		if not is_instance_valid(target_enemy):
+			return
+		if target_enemy.is_defeated():
+			return
+		var burn_info := DamageInfo.from_values(burn_damage, &"projectile", source_weapon_id)
+		_apply_damage_to_enemy(target_enemy, burn_info)
+		_apply_thermobaric_burn_tick(target_enemy, burn_damage, ticks_left - 1, interval, source_weapon_id)
+	)
 
 func _alive_enemy_count() -> int:
 	var alive_count := 0
@@ -1287,8 +1523,11 @@ func _try_open_upgrade_panel() -> void:
 	_refresh_upgrade_options()
 
 func _refresh_upgrade_options() -> void:
-	var selection_pool := _build_skill_selection_pool()
-	_upgrade_options = _pick_upgrade_options(selection_pool, UPGRADE_OPTION_COUNT)
+	if _should_force_unlock_options():
+		_upgrade_options = _pick_forced_unlock_options(UPGRADE_OPTION_COUNT)
+	else:
+		var selection_pool := _build_skill_selection_pool()
+		_upgrade_options = _pick_upgrade_options(selection_pool, UPGRADE_OPTION_COUNT)
 
 	for index in _upgrade_buttons.size():
 		var option_button := _upgrade_buttons[index]
@@ -1311,6 +1550,21 @@ func _refresh_upgrade_options() -> void:
 		else:
 			option_button.visible = false
 			option_button.disabled = true
+
+func _should_force_unlock_options() -> bool:
+	if _upgrade_pick_count >= 2:
+		return false
+	if _equipped_weapon_ids.size() >= max_equipped_weapons:
+		return false
+	return not _build_unlock_options().is_empty()
+
+func _pick_forced_unlock_options(limit: int) -> Array[Dictionary]:
+	var unlock_options := _build_unlock_options()
+	unlock_options.shuffle()
+	var picked: Array[Dictionary] = []
+	var used_keys: Dictionary = {}
+	_append_unique_upgrade_options(picked, used_keys, unlock_options, limit)
+	return picked
 
 func _build_skill_selection_pool() -> Dictionary:
 	var unlock_options := _build_unlock_options()
@@ -1431,6 +1685,14 @@ func _icon_for_upgrade_type(upgrade_type: StringName) -> String:
 			return "☍"
 		UPGRADE_SUMMON_IMPLOSION:
 			return "✺"
+		UPGRADE_THERMOBARIC_KNOCKBACK:
+			return "⇶"
+		UPGRADE_THERMOBARIC_BURN:
+			return "🔥"
+		UPGRADE_SHOCK_STUN_DURATION:
+			return "⛔"
+		UPGRADE_SHOCK_AFTER_SLOW:
+			return "🐢"
 	return "◆"
 
 func _upgrade_name_for_type(upgrade_type: StringName) -> String:
@@ -1475,6 +1737,14 @@ func _upgrade_name_for_type(upgrade_type: StringName) -> String:
 			return "额外黑洞"
 		UPGRADE_SUMMON_IMPLOSION:
 			return "塌缩爆发"
+		UPGRADE_THERMOBARIC_KNOCKBACK:
+			return "冲击击退"
+		UPGRADE_THERMOBARIC_BURN:
+			return "热灼余焰"
+		UPGRADE_SHOCK_STUN_DURATION:
+			return "震荡延时"
+		UPGRADE_SHOCK_AFTER_SLOW:
+			return "震后迟滞"
 	return String(upgrade_type)
 
 func _icon_for_weapon(weapon_id: String) -> String:
@@ -1489,6 +1759,10 @@ func _icon_for_weapon(weapon_id: String) -> String:
 			return "✸"
 		"arc":
 			return "⌁"
+		"thermobaric":
+			return "☄"
+		"shock_bomb":
+			return "💥"
 	return "◆"
 
 func _build_unlock_options() -> Array[Dictionary]:
@@ -1517,6 +1791,10 @@ func _build_weapon_unlock_summary(weapon: Dictionary) -> String:
 	if weapon_kind == &"summon":
 		var summon_rate := 1.0 / maxf(0.05, float(weapon.summon_tick_interval))
 		return "脉冲 %.1f | 跳频 %.2f/s | 范围 %.0f" % [float(weapon.damage), summon_rate, float(weapon.summon_radius)]
+	if weapon_kind == &"shock":
+		return "伤害 %.1f | 眩晕 %.2fs | 爆炸半径 %.0f" % [float(weapon.damage), float(weapon.get("stun_duration", 0.0)), float(weapon.hit_radius)]
+	if String(weapon.get("id", "")) == "thermobaric":
+		return "伤害 %.1f | 射速 %.2f/s | 冲击半径 %.0f" % [float(weapon.damage), rate, float(weapon.hit_radius) * 1.8]
 	return "伤害 %.1f | 射速 %.2f/s | 弹丸 %d" % [float(weapon.damage), rate, int(weapon.projectile_count)]
 
 func _build_weapon_upgrade_options(weapon_id: String) -> Array[Dictionary]:
@@ -1530,6 +1808,10 @@ func _build_weapon_upgrade_options(weapon_id: String) -> Array[Dictionary]:
 		upgrade_types = [UPGRADE_DAMAGE, UPGRADE_FIRE_RATE, UPGRADE_LASER_WIDTH, UPGRADE_LASER_DURATION, UPGRADE_LASER_CHAIN, UPGRADE_LASER_CHAIN_RANGE, UPGRADE_LASER_BURN]
 	elif weapon_kind == &"summon":
 		upgrade_types = [UPGRADE_DAMAGE, UPGRADE_FIRE_RATE, UPGRADE_SUMMON_RADIUS, UPGRADE_SUMMON_DURATION, UPGRADE_SUMMON_TICK_RATE, UPGRADE_SUMMON_EXTRA_FIELD, UPGRADE_SUMMON_IMPLOSION]
+	elif weapon_id == "thermobaric":
+		upgrade_types = [UPGRADE_PROJECTILE_COUNT, UPGRADE_THERMOBARIC_KNOCKBACK, UPGRADE_THERMOBARIC_BURN, UPGRADE_FIRE_RATE, UPGRADE_HIT_RADIUS]
+	elif weapon_id == "shock_bomb":
+		upgrade_types = [UPGRADE_SHOCK_STUN_DURATION, UPGRADE_DAMAGE, UPGRADE_PROJECTILE_COUNT, UPGRADE_SHOCK_AFTER_SLOW, UPGRADE_FIRE_RATE]
 	else:
 		upgrade_types = [UPGRADE_DAMAGE, UPGRADE_FIRE_RATE, UPGRADE_PROJECTILE_COUNT, UPGRADE_HIT_RADIUS, UPGRADE_PIERCE, UPGRADE_SPLIT, UPGRADE_EXPLOSION]
 		if weapon_id == "pulse":
@@ -1577,9 +1859,28 @@ func _build_weapon_upgrade_option(weapon_id: String, upgrade_type: StringName) -
 			}
 		UPGRADE_PROJECTILE_COUNT:
 			var before_count := int(weapon.projectile_count)
-			if before_count >= 8:
+			var max_count := 4 if weapon_id == "thermobaric" else 8
+			if weapon_id == "shock_bomb":
+				max_count = 5
+			if before_count >= max_count:
 				return {}
 			var after_count := before_count + 1
+			if weapon_id == "thermobaric":
+				return {
+					"type": OPTION_WEAPON_UPGRADE,
+					"weapon_id": weapon_id,
+					"upgrade_type": UPGRADE_PROJECTILE_COUNT,
+					"option_key": "%s:%s" % [weapon_id, String(UPGRADE_PROJECTILE_COUNT)],
+					"label": "%s · 同向连发\n同方向弹丸 %d -> %d" % [weapon_name, before_count, after_count],
+				}
+			if weapon_id == "shock_bomb":
+				return {
+					"type": OPTION_WEAPON_UPGRADE,
+					"weapon_id": weapon_id,
+					"upgrade_type": UPGRADE_PROJECTILE_COUNT,
+					"option_key": "%s:%s" % [weapon_id, String(UPGRADE_PROJECTILE_COUNT)],
+					"label": "%s · 连环震爆\n每次释放爆震次数 %d -> %d" % [weapon_name, before_count, after_count],
+				}
 			return {
 				"type": OPTION_WEAPON_UPGRADE,
 				"weapon_id": weapon_id,
@@ -1592,6 +1893,14 @@ func _build_weapon_upgrade_option(weapon_id: String, upgrade_type: StringName) -
 			if before_radius >= 54.0:
 				return {}
 			var after_radius := minf(54.0, before_radius + 3.0)
+			if weapon_id == "thermobaric":
+				return {
+					"type": OPTION_WEAPON_UPGRADE,
+					"weapon_id": weapon_id,
+					"upgrade_type": UPGRADE_HIT_RADIUS,
+					"option_key": "%s:%s" % [weapon_id, String(UPGRADE_HIT_RADIUS)],
+					"label": "%s · 扩散装药\n冲击范围 %.0f -> %.0f" % [weapon_name, before_radius, after_radius],
+				}
 			return {
 				"type": OPTION_WEAPON_UPGRADE,
 				"weapon_id": weapon_id,
@@ -1805,6 +2114,58 @@ func _build_weapon_upgrade_option(weapon_id: String, upgrade_type: StringName) -
 				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_SUMMON_IMPLOSION)],
 				"label": "%s · 塌缩爆发\n结束爆发 %.2f -> %.2f，额外半径 %.0f -> %.0f" % [weapon_name, before_implosion_ratio, after_implosion_ratio, before_implosion_radius, after_implosion_radius],
 			}
+		UPGRADE_THERMOBARIC_KNOCKBACK:
+			var before_knockback := float(weapon.get("knockback_distance", 0.0))
+			if before_knockback >= 240.0:
+				return {}
+			var after_knockback := minf(240.0, before_knockback + 28.0)
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_THERMOBARIC_KNOCKBACK,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_THERMOBARIC_KNOCKBACK)],
+				"label": "%s · 冲击波束\n击退距离 %.0f -> %.0f" % [weapon_name, before_knockback, after_knockback],
+			}
+		UPGRADE_THERMOBARIC_BURN:
+			var before_burn_damage := float(weapon.get("burn_damage", 0.0))
+			var before_burn_ticks := int(weapon.get("burn_ticks", 0))
+			var after_burn_damage := minf(18.0, before_burn_damage + 1.6)
+			var after_burn_ticks : int = min(8, before_burn_ticks + 1)
+			if is_equal_approx(before_burn_damage, after_burn_damage) and before_burn_ticks == after_burn_ticks:
+				return {}
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_THERMOBARIC_BURN,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_THERMOBARIC_BURN)],
+				"label": "%s · 热灼余焰\n每跳灼伤 %.1f -> %.1f，持续跳数 %d -> %d" % [weapon_name, before_burn_damage, after_burn_damage, before_burn_ticks, after_burn_ticks],
+			}
+		UPGRADE_SHOCK_STUN_DURATION:
+			var before_stun := float(weapon.get("stun_duration", 0.0))
+			if before_stun >= 2.4:
+				return {}
+			var after_stun := minf(2.4, before_stun + 0.22)
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_SHOCK_STUN_DURATION,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_SHOCK_STUN_DURATION)],
+				"label": "%s · 脑震回响\n眩晕时长 %.2fs -> %.2fs" % [weapon_name, before_stun, after_stun],
+			}
+		UPGRADE_SHOCK_AFTER_SLOW:
+			var before_slow_factor := clampf(float(weapon.get("slow_factor", 1.0)), 0.15, 1.0)
+			var before_slow_duration := float(weapon.get("slow_duration", 0.0))
+			var after_slow_factor := maxf(0.35, before_slow_factor - 0.08)
+			var after_slow_duration := minf(3.2, before_slow_duration + 0.35)
+			if is_equal_approx(before_slow_factor, after_slow_factor) and is_equal_approx(before_slow_duration, after_slow_duration):
+				return {}
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_SHOCK_AFTER_SLOW,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_SHOCK_AFTER_SLOW)],
+				"label": "%s · 震后迟滞\n减速系数 %.2f -> %.2f，减速时长 %.2fs -> %.2fs" % [weapon_name, before_slow_factor, after_slow_factor, before_slow_duration, after_slow_duration],
+			}
 	return {}
 
 func _close_upgrade_panel() -> void:
@@ -1821,6 +2182,7 @@ func _close_upgrade_panel() -> void:
 func _on_pick_upgrade(option_index: int) -> void:
 	if option_index < 0 or option_index >= _upgrade_options.size():
 		return
+	_upgrade_pick_count += 1
 	_apply_upgrade(_upgrade_options[option_index])
 	_close_upgrade_panel()
 
@@ -1848,7 +2210,10 @@ func _apply_weapon_upgrade(weapon_id: String, upgrade_type: StringName) -> void:
 		UPGRADE_FIRE_RATE:
 			weapon.fire_interval = maxf(float(weapon.fire_interval_min), float(weapon.fire_interval) * 0.88)
 		UPGRADE_PROJECTILE_COUNT:
-			weapon.projectile_count = min(8, int(weapon.projectile_count) + 1)
+			var max_count := 4 if weapon_id == "thermobaric" else 8
+			if weapon_id == "shock_bomb":
+				max_count = 5
+			weapon.projectile_count = min(max_count, int(weapon.projectile_count) + 1)
 		UPGRADE_HIT_RADIUS:
 			weapon.hit_radius = minf(54.0, float(weapon.hit_radius) + 3.0)
 		UPGRADE_PIERCE:
@@ -1889,6 +2254,17 @@ func _apply_weapon_upgrade(weapon_id: String, upgrade_type: StringName) -> void:
 		UPGRADE_SUMMON_IMPLOSION:
 			weapon.summon_explode_damage_ratio = minf(1.0, float(weapon.get("summon_explode_damage_ratio", 0.0)) + 0.15)
 			weapon.summon_explode_radius_bonus = minf(72.0, float(weapon.get("summon_explode_radius_bonus", 0.0)) + 8.0)
+		UPGRADE_THERMOBARIC_KNOCKBACK:
+			weapon.knockback_distance = minf(240.0, float(weapon.get("knockback_distance", 0.0)) + 28.0)
+		UPGRADE_THERMOBARIC_BURN:
+			weapon.burn_damage = minf(18.0, float(weapon.get("burn_damage", 0.0)) + 1.6)
+			weapon.burn_ticks = min(8, int(weapon.get("burn_ticks", 0)) + 1)
+		UPGRADE_SHOCK_STUN_DURATION:
+			weapon.stun_duration = minf(2.4, float(weapon.get("stun_duration", 0.0)) + 0.22)
+		UPGRADE_SHOCK_AFTER_SLOW:
+			weapon.slow_factor = maxf(0.35, float(weapon.get("slow_factor", 1.0)) - 0.08)
+			weapon.slow_duration = minf(3.2, float(weapon.get("slow_duration", 0.0)) + 0.35)
+			weapon.field_duration = minf(6.0, float(weapon.get("field_duration", 0.0)) + 0.45)
 
 func _update_progression_text() -> void:
 	level_label.text = "Level: %d" % _current_level

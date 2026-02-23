@@ -21,6 +21,7 @@ offset_left = -18.0
 offset_top = -30.0
 offset_right = 18.0
 offset_bottom = -22.0
+theme_override_colors/font_color = Color(1, 0, 0, 1)
 max_value = 60.0
 value = 60.0
 show_percentage = false

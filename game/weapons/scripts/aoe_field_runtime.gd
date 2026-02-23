@@ -2,6 +2,7 @@ extends Node2D
 class_name AOEFieldRuntime
 
 signal pulse_damage(position: Vector2, radius: float, damage_info: DamageInfo)
+signal pulse(position: Vector2, radius: float)
 signal expired(field: AOEFieldRuntime)
 
 @export var radius := 72.0
@@ -38,6 +39,7 @@ func _process(delta: float) -> void:
 
 	if _tick_cooldown <= 0.0:
 		_tick_cooldown = tick_interval
+		pulse.emit(global_position, radius)
 		if _damage_info != null:
 			pulse_damage.emit(global_position, radius, _damage_info)
 
