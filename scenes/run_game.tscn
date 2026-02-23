@@ -2,13 +2,22 @@
 
 [ext_resource type="PackedScene" path="res://game/player/scenes/player.tscn" id="1"]
 [ext_resource type="Script" uid="uid://du8hnscy5lmot" path="res://game/waves/scripts/wave_director.gd" id="2"]
+[ext_resource type="Texture2D" uid="uid://s43sk4nuq7md" path="res://assets/art/image/background.png" id="2_0x83u"]
+[ext_resource type="AudioStream" uid="uid://hy3unstqkuwi" path="res://assets/sfx/game_bgm.ogg" id="2_10j5h"]
 [ext_resource type="Script" uid="uid://dnhnqqwyfapfk" path="res://scenes/run_game.gd" id="3"]
+[ext_resource type="AudioStream" uid="uid://cdseo73311w0g" path="res://assets/sfx/shoot.ogg" id="3_f878p"]
+[ext_resource type="AudioStream" uid="uid://dieds3sfbqmft" path="res://assets/sfx/level_up.ogg" id="4_jflmc"]
 
 [node name="RunGame" type="Node2D" unique_id=691868678]
 script = ExtResource("3")
+run_bgm_stream = ExtResource("2_10j5h")
+shoot_sfx_stream = ExtResource("3_f878p")
+level_up_sfx_stream = ExtResource("4_jflmc")
 
 [node name="BackgroundImage" type="Sprite2D" parent="." unique_id=679132404]
 z_index = -100
+scale = Vector2(2, 2)
+texture = ExtResource("2_0x83u")
 centered = false
 
 [node name="Player" parent="." unique_id=1018895114 instance=ExtResource("1")]

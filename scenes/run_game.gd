@@ -41,6 +41,9 @@ const UPGRADE_SUMMON_DURATION: StringName = &"summon_duration"
 const UPGRADE_SUMMON_TICK_RATE: StringName = &"summon_tick_rate"
 const UPGRADE_SUMMON_EXTRA_FIELD: StringName = &"summon_extra_field"
 const UPGRADE_SUMMON_IMPLOSION: StringName = &"summon_implosion"
+const SFX_KEY_SHOOT: StringName = &"run_shoot"
+const SFX_KEY_HIT: StringName = &"run_hit"
+const SFX_KEY_LEVEL_UP: StringName = &"run_level_up"
 
 @export var enemy_spawn_interval := 1.2
 @export var intra_wave_spawn_interval_scale := 1.1
@@ -62,6 +65,29 @@ const UPGRADE_SUMMON_IMPLOSION: StringName = &"summon_implosion"
 @export var exp_per_kill := 12
 @export var exp_to_level_base := 40
 @export var exp_to_level_growth := 1.32
+@export_group("Audio")
+@export var run_bgm_stream: AudioStream
+@export var run_bgm_volume_db := -8.0
+@export var shoot_sfx_stream: AudioStream
+@export var shoot_sfx_pulse_stream: AudioStream
+@export var shoot_sfx_laser_stream: AudioStream
+@export var shoot_sfx_summon_stream: AudioStream
+@export var shoot_sfx_scatter_stream: AudioStream
+@export var shoot_sfx_arc_stream: AudioStream
+@export var shoot_sfx_volume_db := -6.0
+@export var shoot_sfx_cooldown := 0.02
+@export var hit_sfx_stream: AudioStream
+@export var hit_sfx_basic_stream: AudioStream
+@export var hit_sfx_runner_stream: AudioStream
+@export var hit_sfx_weaver_stream: AudioStream
+@export var hit_sfx_tank_stream: AudioStream
+@export var hit_sfx_berserker_stream: AudioStream
+@export var hit_sfx_boss_brute_stream: AudioStream
+@export var hit_sfx_boss_overlord_stream: AudioStream
+@export var hit_sfx_volume_db := -10.0
+@export var hit_sfx_cooldown := 0.05
+@export var level_up_sfx_stream: AudioStream
+@export var level_up_sfx_volume_db := -5.0
 
 @onready var player: CharacterBody2D = $Player
 @onready var enemy_container: Node2D = $EnemyContainer
@@ -126,6 +152,7 @@ func _ready() -> void:
 	GameState.load_persistent_state()
 	GameState.reset_run_state()
 	GameState.start_run()
+	_start_run_audio()
 
 	var player_controller := player as PlayerController
 	player_controller.health_component.died.connect(_on_player_died)
@@ -151,6 +178,126 @@ func _ready() -> void:
 	_update_wave_text()
 	_update_progression_text()
 	_update_weapon_text()
+
+func _exit_tree() -> void:
+	_stop_run_audio()
+
+func _start_run_audio() -> void:
+	if run_bgm_stream != null:
+		AudioService.play_bgm(run_bgm_stream, run_bgm_volume_db)
+	AudioService.clear_sfx_cooldowns()
+
+func _stop_run_audio() -> void:
+	AudioService.stop_bgm()
+	AudioService.stop_all_sfx()
+
+func _play_shoot_sfx(weapon_id: String) -> void:
+	var stream := _shoot_sfx_stream_for_weapon(weapon_id)
+	if stream == null:
+		return
+	var key := StringName("%s_%s" % [String(SFX_KEY_SHOOT), weapon_id])
+	AudioService.play_sfx_with_cooldown(key, stream, shoot_sfx_cooldown, shoot_sfx_volume_db)
+
+func _play_enemy_hit_sfx(enemy: EnemyBase) -> void:
+	if enemy == null:
+		return
+	var enemy_audio_key := _enemy_audio_key_for_enemy(enemy)
+	var stream := _hit_sfx_stream_for_enemy_key(enemy_audio_key)
+	if stream == null:
+		return
+	var key := StringName("%s_%s" % [String(SFX_KEY_HIT), String(enemy_audio_key)])
+	AudioService.play_sfx_with_cooldown(key, stream, hit_sfx_cooldown, hit_sfx_volume_db)
+
+func _shoot_sfx_stream_for_weapon(weapon_id: String) -> AudioStream:
+	match weapon_id:
+		"pulse":
+			if shoot_sfx_pulse_stream != null:
+				return shoot_sfx_pulse_stream
+		"laser":
+			if shoot_sfx_laser_stream != null:
+				return shoot_sfx_laser_stream
+		"summon_blackhole":
+			if shoot_sfx_summon_stream != null:
+				return shoot_sfx_summon_stream
+		"scatter":
+			if shoot_sfx_scatter_stream != null:
+				return shoot_sfx_scatter_stream
+		"arc":
+			if shoot_sfx_arc_stream != null:
+				return shoot_sfx_arc_stream
+	return shoot_sfx_stream
+
+func _enemy_audio_key_from_scene(enemy_scene: PackedScene) -> StringName:
+	if enemy_scene == null:
+		return &"default"
+	var path := String(enemy_scene.resource_path)
+	if path.contains("zombie_basic"):
+		return &"basic"
+	if path.contains("zombie_runner"):
+		return &"runner"
+	if path.contains("zombie_weaver"):
+		return &"weaver"
+	if path.contains("zombie_tank"):
+		return &"tank"
+	if path.contains("zombie_berserker"):
+		return &"berserker"
+	if path.contains("zombie_boss_brute"):
+		return &"boss_brute"
+	if path.contains("zombie_boss_overlord"):
+		return &"boss_overlord"
+	return &"default"
+
+func _enemy_audio_key_for_enemy(enemy: EnemyBase) -> StringName:
+	if enemy == null:
+		return &"default"
+	var from_meta := String(enemy.get_meta("audio_enemy_key", "")).strip_edges()
+	if from_meta != "":
+		return StringName(from_meta)
+	var scene_path := String(enemy.scene_file_path)
+	if scene_path != "":
+		if scene_path.contains("zombie_basic"):
+			return &"basic"
+		if scene_path.contains("zombie_runner"):
+			return &"runner"
+		if scene_path.contains("zombie_weaver"):
+			return &"weaver"
+		if scene_path.contains("zombie_tank"):
+			return &"tank"
+		if scene_path.contains("zombie_berserker"):
+			return &"berserker"
+		if scene_path.contains("zombie_boss_brute"):
+			return &"boss_brute"
+		if scene_path.contains("zombie_boss_overlord"):
+			return &"boss_overlord"
+	return &"default"
+
+func _hit_sfx_stream_for_enemy_key(enemy_key: StringName) -> AudioStream:
+	match enemy_key:
+		&"basic":
+			if hit_sfx_basic_stream != null:
+				return hit_sfx_basic_stream
+		&"runner":
+			if hit_sfx_runner_stream != null:
+				return hit_sfx_runner_stream
+		&"weaver":
+			if hit_sfx_weaver_stream != null:
+				return hit_sfx_weaver_stream
+		&"tank":
+			if hit_sfx_tank_stream != null:
+				return hit_sfx_tank_stream
+		&"berserker":
+			if hit_sfx_berserker_stream != null:
+				return hit_sfx_berserker_stream
+		&"boss_brute":
+			if hit_sfx_boss_brute_stream != null:
+				return hit_sfx_boss_brute_stream
+		&"boss_overlord":
+			if hit_sfx_boss_overlord_stream != null:
+				return hit_sfx_boss_overlord_stream
+	return hit_sfx_stream
+
+func _play_level_up_sfx() -> void:
+	AudioService.play_sfx_with_cooldown(SFX_KEY_LEVEL_UP, level_up_sfx_stream, 0.0, level_up_sfx_volume_db)
 
 func _process(delta: float) -> void:
 	if _is_run_over:
@@ -469,6 +616,7 @@ func _spawn_enemy_from_batch(batch: WaveSpawnBatch) -> void:
 	enemy.attack_line_y = player.global_position.y
 	enemy.attack_damage = enemy_attack_damage
 	enemy.move_speed = maxf(25.0, enemy.move_speed * maxf(0.3, enemy_move_speed_scale))
+	enemy.set_meta("audio_enemy_key", String(_enemy_audio_key_from_scene(enemy_scene)))
 	enemy.attack_tick.connect(_on_enemy_attack_tick)
 	enemy.defeated.connect(_on_enemy_defeated)
 
@@ -580,6 +728,7 @@ func _fire_weapon(weapon: Dictionary) -> void:
 	var damage := float(weapon.damage)
 	var weapon_kind := StringName(String(weapon.weapon_kind))
 	var weapon_id := String(weapon.id)
+	_play_shoot_sfx(weapon_id)
 
 	if weapon_kind == &"summon":
 		_spawn_black_hole(weapon, nearest_enemy, damage)
@@ -888,7 +1037,12 @@ func _apply_damage_to_enemy(enemy: EnemyBase, info: DamageInfo) -> void:
 		return
 	if not is_instance_valid(enemy):
 		return
+	if info == null:
+		return
+	if info.amount <= 0.0:
+		return
 	enemy.apply_damage_info(info)
+	_play_enemy_hit_sfx(enemy)
 
 func _find_hit_enemy_for_bullet(bullet: ProjectileRuntime, hit_radius: float) -> EnemyBase:
 	var hit_ids := PackedInt64Array(bullet.get_meta("hit_enemy_ids", PackedInt64Array()))
@@ -1121,6 +1275,7 @@ func _gain_experience(amount: int) -> void:
 		_current_exp -= _next_level_exp
 		_current_level += 1
 		_pending_level_ups += 1
+		_play_level_up_sfx()
 		_next_level_exp = int(round(float(exp_to_level_base) * pow(exp_to_level_growth, _current_level - 1)))
 
 func _try_open_upgrade_panel() -> void:
