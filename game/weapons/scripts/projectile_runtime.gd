@@ -10,6 +10,7 @@ var DEFAULT_EFFECT_SHAPE := PackedVector2Array([
 
 @export var speed := 900.0
 @export var visual_node_path: NodePath = ^"Visual"
+@export var sprite_visual_path: NodePath = ^"SpriteVisual"
 @export var trail_particles_path: NodePath = ^"TrailParticles"
 @export var impact_effect_scene: PackedScene
 @export var despawn_effect_scene: PackedScene
@@ -27,7 +28,16 @@ var _impact_effect_scale := 1.0
 var _despawn_effect_scale := 0.7
 
 @onready var visual_node: CanvasItem = get_node_or_null(visual_node_path)
+@onready var sprite_visual: Sprite2D = get_node_or_null(sprite_visual_path) as Sprite2D
 @onready var trail_particles: GPUParticles2D = get_node_or_null(trail_particles_path) as GPUParticles2D
+
+func _ready() -> void:
+	_ensure_sprite_visual()
+	if sprite_visual != null:
+		var has_texture := sprite_visual.texture != null
+		sprite_visual.visible = has_texture
+		if visual_node != null:
+			visual_node.visible = not has_texture
 
 func _physics_process(delta: float) -> void:
 	if GameState.is_paused:
@@ -57,6 +67,7 @@ func _physics_process(delta: float) -> void:
 func configure_display_profile(profile: Dictionary) -> void:
 	if profile.is_empty():
 		return
+	_ensure_sprite_visual()
 
 	if profile.has("speed"):
 		speed = maxf(20.0, float(profile.get("speed", speed)))
@@ -71,6 +82,10 @@ func configure_display_profile(profile: Dictionary) -> void:
 
 	if profile.has("shape_points"):
 		set_shape_points(profile.get("shape_points", PackedVector2Array()))
+	if profile.has("texture"):
+		set_visual_texture(profile.get("texture", null) as Texture2D)
+	else:
+		set_visual_texture(null)
 	if profile.has("color"):
 		set_visual_color(Color(profile.get("color", Color.WHITE)))
 	if profile.has("trail_enabled"):
@@ -93,6 +108,9 @@ func configure_display_profile(profile: Dictionary) -> void:
 		_despawn_effect_scale = maxf(0.2, float(profile.get("despawn_effect_scale", _despawn_effect_scale)))
 
 func set_visual_color(next_color: Color) -> void:
+	if sprite_visual != null and sprite_visual.visible:
+		sprite_visual.modulate = next_color
+		return
 	if visual_node == null:
 		return
 	if visual_node is Polygon2D:
@@ -101,7 +119,19 @@ func set_visual_color(next_color: Color) -> void:
 		return
 	visual_node.modulate = next_color
 
+func set_visual_texture(texture: Texture2D) -> void:
+	_ensure_sprite_visual()
+	if sprite_visual == null:
+		return
+	sprite_visual.texture = texture
+	var has_texture := texture != null
+	sprite_visual.visible = has_texture
+	if visual_node != null:
+		visual_node.visible = not has_texture
+
 func set_shape_points(points: PackedVector2Array) -> void:
+	if sprite_visual != null and sprite_visual.visible:
+		return
 	if visual_node == null:
 		return
 	if not (visual_node is Polygon2D):
@@ -193,3 +223,18 @@ func _normalize_effect_shape(points: Variant) -> PackedVector2Array:
 		if not packed_points.is_empty():
 			return packed_points
 	return DEFAULT_EFFECT_SHAPE.duplicate()
+
+func _ensure_sprite_visual() -> void:
+	if sprite_visual != null:
+		return
+	sprite_visual = get_node_or_null(sprite_visual_path) as Sprite2D
+	if sprite_visual != null:
+		sprite_visual.centered = true
+		sprite_visual.visible = false
+		return
+	var runtime_sprite := Sprite2D.new()
+	runtime_sprite.name = String(sprite_visual_path)
+	runtime_sprite.centered = true
+	runtime_sprite.visible = false
+	add_child(runtime_sprite)
+	sprite_visual = runtime_sprite

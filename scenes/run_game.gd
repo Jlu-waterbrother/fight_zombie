@@ -104,6 +104,15 @@ const SFX_KEY_LEVEL_UP: StringName = &"run_level_up"
 	"thermobaric": Vector2i(5, 0),
 	"shock_bomb": Vector2i(6, 0)
 }
+@export var weapon_bullet_overrides: Dictionary = {
+	"pulse": Vector2i(0, 0),
+	"laser": Vector2i(1, 0),
+	"blackhole": Vector2i(2, 0),
+	"scatter": Vector2i(3, 0),
+	"arc": Vector2i(4, 0),
+	"thermobaric": Vector2i(5, 0),
+	"shock_bomb": Vector2i(6, 0)
+}
 
 @onready var ui_layer: CanvasLayer = $UILayer
 @onready var player: CharacterBody2D = $Player
@@ -167,6 +176,7 @@ var _effective_spawn_interval_scale := 1.0
 var _active_wave_batches: Array[Dictionary] = []
 var _enemy_entry_by_scene_path: Dictionary = {}
 var _weapon_icon_region_by_id: Dictionary = {}
+var _weapon_bullet_region_by_id: Dictionary = {}
 var _weapon_cooldown_hud_panel: PanelContainer
 var _weapon_cooldown_hud_list: VBoxContainer
 var _weapon_cooldown_icon_by_id: Dictionary = {}
@@ -189,6 +199,7 @@ func _ready() -> void:
 	_setup_upgrade_buttons()
 	_init_weapon_pool()
 	_init_random_weapon_icon_regions()
+	_init_random_weapon_bullet_regions()
 	_setup_weapon_cooldown_hud()
 	_apply_run_modifiers_from_state()
 	if not _weapon_order.is_empty():
@@ -397,7 +408,7 @@ func _setup_weapon_cooldown_hud() -> void:
 		_weapon_cooldown_hud_panel.queue_free()
 
 	_weapon_cooldown_hud_panel = PanelContainer.new()
-	_weapon_cooldown_hud_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_weapon_cooldown_hud_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_weapon_cooldown_hud_panel.custom_minimum_size = Vector2(92.0, 240.0)
 	_weapon_cooldown_hud_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	_weapon_cooldown_hud_panel.gui_input.connect(_on_weapon_cooldown_hud_gui_input)
@@ -443,13 +454,13 @@ func _reposition_weapon_cooldown_hud() -> void:
 	if not is_instance_valid(_weapon_cooldown_hud_panel):
 		return
 	var panel_size := _weapon_cooldown_hud_panel.custom_minimum_size
-	var left_margin := 10.0
+	var right_margin := 10.0
 	var top_margin := 10.0
 	var top_offset := top_margin
 	if exp_progress_bar != null and exp_progress_bar.visible:
 		top_offset = maxf(top_offset, exp_progress_bar.position.y + exp_progress_bar.size.y + 10.0)
-	_weapon_cooldown_hud_panel.offset_left = left_margin
-	_weapon_cooldown_hud_panel.offset_right = left_margin + panel_size.x
+	_weapon_cooldown_hud_panel.offset_left = -panel_size.x - right_margin
+	_weapon_cooldown_hud_panel.offset_right = -right_margin
 	_weapon_cooldown_hud_panel.offset_top = top_offset
 	_weapon_cooldown_hud_panel.offset_bottom = top_offset + panel_size.y
 
@@ -501,6 +512,19 @@ func _weapon_icon_texture_for_weapon_id(weapon_id: String) -> Texture2D:
 	if not _weapon_icon_region_by_id.has(weapon_id):
 		return null
 	var region: Rect2i = _weapon_icon_region_by_id[weapon_id]
+	var atlas_texture := AtlasTexture.new()
+	atlas_texture.atlas = weapon_icon_atlas
+	atlas_texture.region = region
+	return atlas_texture
+
+func _weapon_bullet_texture_for_weapon_id(weapon_id: String) -> Texture2D:
+	if weapon_icon_atlas == null:
+		return null
+	if weapon_id == "":
+		return null
+	if not _weapon_bullet_region_by_id.has(weapon_id):
+		return null
+	var region: Rect2i = _weapon_bullet_region_by_id[weapon_id]
 	var atlas_texture := AtlasTexture.new()
 	atlas_texture.atlas = weapon_icon_atlas
 	atlas_texture.region = region
@@ -606,6 +630,37 @@ func _init_random_weapon_icon_regions() -> void:
 		cursor += 1
 		_weapon_icon_region_by_id[weapon_id] = Rect2i(cell * cell_size, cell_size)
 
+func _init_random_weapon_bullet_regions() -> void:
+	_weapon_bullet_region_by_id.clear()
+	if weapon_icon_atlas == null:
+		return
+	if _weapon_order.is_empty():
+		return
+
+	var cell_size := Vector2i(max(1, weapon_icon_cell_size.x), max(1, weapon_icon_cell_size.y))
+	var columns : int = max(1, weapon_icon_columns)
+	var rows : int = max(1, weapon_icon_rows)
+	var cells: Array[Vector2i] = []
+	for y in rows:
+		for x in columns:
+			cells.append(Vector2i(x, y))
+	if cells.is_empty():
+		return
+
+	cells.shuffle()
+	var cursor := 0
+	for weapon_id in _weapon_order:
+		var override_cell := _weapon_bullet_override_cell_for_weapon(weapon_id)
+		if override_cell != Vector2i(-1, -1):
+			_weapon_bullet_region_by_id[weapon_id] = Rect2i(override_cell * cell_size, cell_size)
+			continue
+		if cursor >= cells.size():
+			cursor = 0
+			cells.shuffle()
+		var cell := cells[cursor]
+		cursor += 1
+		_weapon_bullet_region_by_id[weapon_id] = Rect2i(cell * cell_size, cell_size)
+
 func _weapon_icon_override_cell_for_weapon(weapon_id: String) -> Vector2i:
 	if weapon_id == "":
 		return Vector2i(-1, -1)
@@ -614,6 +669,31 @@ func _weapon_icon_override_cell_for_weapon(weapon_id: String) -> Vector2i:
 	if not weapon_icon_overrides.has(weapon_id):
 		return Vector2i(-1, -1)
 	var value = weapon_icon_overrides[weapon_id]
+	var cell := Vector2i(-1, -1)
+	if value is Vector2i:
+		cell = value as Vector2i
+	elif value is Vector2:
+		var v := value as Vector2
+		cell = Vector2i(int(v.x), int(v.y))
+	elif value is String:
+		var text := String(value).strip_edges()
+		var parts := text.split(",", false)
+		if parts.size() == 2 and parts[0].is_valid_int() and parts[1].is_valid_int():
+			cell = Vector2i(parts[0].to_int(), parts[1].to_int())
+	if cell.x < 0 or cell.y < 0:
+		return Vector2i(-1, -1)
+	if cell.x >= max(1, weapon_icon_columns) or cell.y >= max(1, weapon_icon_rows):
+		return Vector2i(-1, -1)
+	return cell
+
+func _weapon_bullet_override_cell_for_weapon(weapon_id: String) -> Vector2i:
+	if weapon_id == "":
+		return Vector2i(-1, -1)
+	if weapon_bullet_overrides == null:
+		return Vector2i(-1, -1)
+	if not weapon_bullet_overrides.has(weapon_id):
+		return Vector2i(-1, -1)
+	var value = weapon_bullet_overrides[weapon_id]
 	var cell := Vector2i(-1, -1)
 	if value is Vector2i:
 		cell = value as Vector2i
@@ -1246,6 +1326,7 @@ func _projectile_display_profile_for_weapon(weapon_id: String, is_split_child: b
 		"rotation_follows_direction": true,
 		"rotation_offset_degrees": 90.0,
 		"scale": 1.0,
+		"speed": 880.0,
 		"trail_enabled": false,
 		"trail_color": Color(0.88, 0.9, 1.0, 0.5),
 		"trail_amount": 8,
@@ -1262,48 +1343,55 @@ func _projectile_display_profile_for_weapon(weapon_id: String, is_split_child: b
 	}
 	match weapon_id:
 		"pulse":
+			profile["texture"] = _weapon_bullet_texture_for_weapon_id("pulse")
+			profile["speed"] = 980.0
 			profile["color"] = Color(0.28, 1.0, 0.66, 1.0)
 			profile["impact_color"] = Color(0.52, 1.0, 0.78, 0.96)
-			profile["scale"] = 1.08
+			profile["scale"] = 0.98
 			profile["shape_points"] = PackedVector2Array([Vector2(0,-6),Vector2(5,0), Vector2(0,6),Vector2(-5, 0)])
 			profile["trail_enabled"] = true
 			profile["trail_color"] = Color(0.46, 1.0, 0.72, 0.62)
-			profile["trail_amount"] = 9
-			profile["trail_lifetime"] = 0.14
-			profile["trail_scale"] = 0.52
-			profile["impact_effect_scale"] = 1.15
+			profile["trail_amount"] = 7
+			profile["trail_lifetime"] = 0.11
+			profile["trail_scale"] = 0.46
+			profile["impact_effect_scale"] = 1.05
 			profile["impact_effect_shape"] = PackedVector2Array([Vector2(0,-8),Vector2(3,-3), Vector2(8,0),Vector2(3,3), Vector2(0,8),Vector2(-3,3), Vector2(-8,0),Vector2(-3,-3)])
 		"scatter":
+			profile["texture"] = _weapon_bullet_texture_for_weapon_id("scatter")
+			profile["speed"] = 760.0
 			profile["color"] = Color(1.0, 0.36, 0.36, 1.0)
 			profile["impact_color"] = Color(1.0, 0.48, 0.48, 0.95)
-			profile["scale"] = 0.92
+			profile["scale"] = 0.76
 			profile["shape_points"] = PackedVector2Array([Vector2(-5,-3),Vector2(5,-3), Vector2(5,3),Vector2(-5,3)])
 			profile["rotation_follows_direction"] = false
 			profile["trail_enabled"] = true
 			profile["trail_color"] = Color(1.0, 0.42, 0.42, 0.64)
-			profile["trail_amount"] = 7
-			profile["trail_lifetime"] = 0.11
-			profile["trail_scale"] = 0.48
+			profile["trail_amount"] = 5
+			profile["trail_lifetime"] = 0.08
+			profile["trail_scale"] = 0.36
 			profile["impact_effect_scale"] = 0.9
 			profile["despawn_effect_scale"] = 0.65
 			profile["impact_effect_shape"] = PackedVector2Array([Vector2(-8,-1),Vector2(8,-1), Vector2(8,1),Vector2(-8,1)])
 			profile["despawn_effect_shape"] = PackedVector2Array([Vector2(-6,-2),Vector2(0,-1), Vector2(6,-2),Vector2(2,0), Vector2(6,2),Vector2(0,1), Vector2(-6,2),Vector2(-2,0)])
 		"arc":
+			profile["texture"] = _weapon_bullet_texture_for_weapon_id("arc")
+			profile["speed"] = 830.0
 			profile["color"] = Color(0.58, 0.32, 1.0, 1.0)
 			profile["impact_color"] = Color(0.76, 0.48, 1.0, 0.98)
 			profile["despawn_color"] = Color(0.56, 0.42, 0.95, 0.72)
-			profile["scale"] = 1.16
-			profile["shape_points"] = PackedVector2Array([Vector2(0,7),Vector2(5,5), Vector2(-5,5)])
+			profile["scale"] = 1.24
+			profile["shape_points"] = PackedVector2Array([Vector2(0,-8),Vector2(6,-2), Vector2(2,6),Vector2(-2,6), Vector2(-6,-2)])
 			profile["trail_enabled"] = true
 			profile["trail_color"] = Color(0.7, 0.4, 1.0, 0.76)
-			profile["trail_amount"] = 16
-			profile["trail_lifetime"] = 0.2
-			profile["trail_scale"] = 0.8
+			profile["trail_amount"] = 18
+			profile["trail_lifetime"] = 0.24
+			profile["trail_scale"] = 0.92
 			profile["impact_effect_scale"] = 1.25
 			profile["despawn_effect_scale"] = 0.88
 			profile["impact_effect_shape"] = PackedVector2Array([Vector2(-2,-8),Vector2(2,-3), Vector2(0,-1),Vector2(5,4), Vector2(1,3),Vector2(-1,8), Vector2(-4,3),Vector2(-1,2)])
 			profile["despawn_effect_shape"] = PackedVector2Array([Vector2(0,-6),Vector2(4,-1), Vector2(2,4),Vector2(-2,4), Vector2(-4,-1)])
 		"shock_bomb":
+			profile["texture"] = _weapon_bullet_texture_for_weapon_id("shock_bomb")
 			profile["color"] = Color(0.12, 0.78, 1.0, 1.0)
 			profile["impact_color"] = Color(0.54, 0.93, 1.0, 0.98)
 			profile["despawn_color"] = Color(0.32, 0.74, 0.96, 0.72)
@@ -1317,17 +1405,19 @@ func _projectile_display_profile_for_weapon(weapon_id: String, is_split_child: b
 			profile["despawn_effect_scale"] = 0.9
 			profile["impact_effect_shape"] = PackedVector2Array([Vector2(0,-9),Vector2(4,-5), Vector2(9,0),Vector2(4,5), Vector2(0,9),Vector2(-4,5), Vector2(-9,0),Vector2(-4,-5)])
 		"thermobaric":
+			profile["texture"] = _weapon_bullet_texture_for_weapon_id("thermobaric")
+			profile["speed"] = 620.0
 			profile["color"] = Color(1.0, 0.22, 0.08, 1.0)
 			profile["impact_color"] = Color(1.0, 0.38, 0.16, 0.98)
-			profile["scale"] = 1.2
+			profile["scale"] = 1.36
 			profile["shape_points"] = PackedVector2Array([Vector2(0,-7),Vector2(6,-1), Vector2(5,5),Vector2(-5,5), Vector2(-6,-1)])
 			profile["trail_enabled"] = true
 			profile["trail_color"] = Color(1.0, 0.3, 0.12, 0.68)
-			profile["trail_amount"] = 12
-			profile["trail_lifetime"] = 0.18
-			profile["trail_scale"] = 0.7
-			profile["impact_effect_scale"] = 1.35
-			profile["despawn_effect_scale"] = 0.92
+			profile["trail_amount"] = 14
+			profile["trail_lifetime"] = 0.24
+			profile["trail_scale"] = 0.88
+			profile["impact_effect_scale"] = 1.5
+			profile["despawn_effect_scale"] = 1.0
 			profile["impact_effect_shape"] = PackedVector2Array([Vector2(0,-10),Vector2(5,-6), Vector2(9,0),Vector2(5,6), Vector2(0,10),Vector2(-5,6), Vector2(-9,0),Vector2(-5,-6)])
 		_:
 			pass
