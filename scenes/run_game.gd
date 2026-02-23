@@ -89,6 +89,12 @@ const SFX_KEY_LEVEL_UP: StringName = &"run_level_up"
 @export var hit_sfx_cooldown := 0.05
 @export var level_up_sfx_stream: AudioStream
 @export var level_up_sfx_volume_db := -5.0
+@export_group("Upgrade UI")
+@export var weapon_icon_atlas: Texture2D
+@export var weapon_icon_cell_size := Vector2i(32, 32)
+@export var weapon_icon_columns := 12
+@export var weapon_icon_rows := 9
+@export var weapon_icon_overrides: Dictionary = {}
 
 @onready var player: CharacterBody2D = $Player
 @onready var enemy_container: Node2D = $EnemyContainer
@@ -150,6 +156,7 @@ var _effective_enemy_count_scale := 1.0
 var _effective_spawn_interval_scale := 1.0
 var _active_wave_batches: Array[Dictionary] = []
 var _enemy_entry_by_scene_path: Dictionary = {}
+var _weapon_icon_region_by_id: Dictionary = {}
 
 func _ready() -> void:
 	GameState.load_persistent_state()
@@ -166,6 +173,7 @@ func _ready() -> void:
 	upgrade_history_button.pressed.connect(_on_toggle_upgrade_history_pressed)
 	_setup_upgrade_buttons()
 	_init_weapon_pool()
+	_init_random_weapon_icon_regions()
 	_apply_run_modifiers_from_state()
 	if not _weapon_order.is_empty():
 		_unlock_weapon(_weapon_order[0])
@@ -397,6 +405,14 @@ func _setup_upgrade_buttons() -> void:
 		title_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		card_vbox.add_child(title_label)
 
+		var icon_texture := TextureRect.new()
+		icon_texture.custom_minimum_size = Vector2(64.0, 64.0)
+		icon_texture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon_texture.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon_texture.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon_texture.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		card_vbox.add_child(icon_texture)
+
 		var icon_label := Label.new()
 		icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -414,9 +430,80 @@ func _setup_upgrade_buttons() -> void:
 
 		_upgrade_card_views.append({
 			"title": title_label,
+			"icon_texture": icon_texture,
 			"icon": icon_label,
 			"effect": effect_label,
 		})
+
+func _init_random_weapon_icon_regions() -> void:
+	_weapon_icon_region_by_id.clear()
+	if weapon_icon_atlas == null:
+		return
+	if _weapon_order.is_empty():
+		return
+
+	var cell_size := Vector2i(max(1, weapon_icon_cell_size.x), max(1, weapon_icon_cell_size.y))
+	var columns : int = max(1, weapon_icon_columns)
+	var rows : int = max(1, weapon_icon_rows)
+	var cells: Array[Vector2i] = []
+	for y in rows:
+		for x in columns:
+			cells.append(Vector2i(x, y))
+	if cells.is_empty():
+		return
+
+	cells.shuffle()
+	var cursor := 0
+	for weapon_id in _weapon_order:
+		var override_cell := _weapon_icon_override_cell_for_weapon(weapon_id)
+		if override_cell != Vector2i(-1, -1):
+			_weapon_icon_region_by_id[weapon_id] = Rect2i(override_cell * cell_size, cell_size)
+			continue
+		if cursor >= cells.size():
+			cursor = 0
+			cells.shuffle()
+		var cell := cells[cursor]
+		cursor += 1
+		_weapon_icon_region_by_id[weapon_id] = Rect2i(cell * cell_size, cell_size)
+
+func _weapon_icon_override_cell_for_weapon(weapon_id: String) -> Vector2i:
+	if weapon_id == "":
+		return Vector2i(-1, -1)
+	if weapon_icon_overrides == null:
+		return Vector2i(-1, -1)
+	if not weapon_icon_overrides.has(weapon_id):
+		return Vector2i(-1, -1)
+	var value = weapon_icon_overrides[weapon_id]
+	var cell := Vector2i(-1, -1)
+	if value is Vector2i:
+		cell = value as Vector2i
+	elif value is Vector2:
+		var v := value as Vector2
+		cell = Vector2i(int(v.x), int(v.y))
+	elif value is String:
+		var text := String(value).strip_edges()
+		var parts := text.split(",", false)
+		if parts.size() == 2 and parts[0].is_valid_int() and parts[1].is_valid_int():
+			cell = Vector2i(parts[0].to_int(), parts[1].to_int())
+	if cell.x < 0 or cell.y < 0:
+		return Vector2i(-1, -1)
+	if cell.x >= max(1, weapon_icon_columns) or cell.y >= max(1, weapon_icon_rows):
+		return Vector2i(-1, -1)
+	return cell
+
+func _weapon_icon_texture_for_option(option: Dictionary) -> Texture2D:
+	if weapon_icon_atlas == null:
+		return null
+	var weapon_id := String(option.get("weapon_id", "")).strip_edges()
+	if weapon_id == "":
+		return null
+	if not _weapon_icon_region_by_id.has(weapon_id):
+		return null
+	var region: Rect2i = _weapon_icon_region_by_id[weapon_id]
+	var atlas_texture := AtlasTexture.new()
+	atlas_texture.atlas = weapon_icon_atlas
+	atlas_texture.region = region
+	return atlas_texture
 
 func _start_wave(wave_index: int) -> void:
 	_current_wave_index = wave_index
@@ -1009,6 +1096,12 @@ func _spawn_projectile(direction: Vector2, hit_radius: float, damage: float, tar
 	bullet.set_meta("burn_damage", float(weapon.get("burn_damage", 0.0)))
 	bullet.set_meta("burn_ticks", int(weapon.get("burn_ticks", 0)))
 	bullet.set_meta("burn_interval", float(weapon.get("burn_interval", 0.35)))
+	bullet.set_meta("stun_duration", float(weapon.get("stun_duration", 0.0)))
+	bullet.set_meta("slow_factor", float(weapon.get("slow_factor", 1.0)))
+	bullet.set_meta("slow_duration", float(weapon.get("slow_duration", 0.0)))
+	bullet.set_meta("field_duration", float(weapon.get("field_duration", 0.0)))
+	bullet.set_meta("field_tick_interval", float(weapon.get("field_tick_interval", 0.24)))
+	bullet.set_meta("field_radius", float(weapon.get("field_radius", 0.0)))
 	bullet.set_meta("can_split", can_split)
 	bullet.set_meta("hit_enemy_ids", PackedInt64Array())
 	bullet.configure_display_profile(_projectile_display_profile_for_weapon(weapon_id, not can_split))
@@ -1020,12 +1113,12 @@ func _projectile_display_profile_for_weapon(weapon_id: String, is_split_child: b
 		"rotation_offset_degrees": 90.0,
 		"scale": 1.0,
 		"trail_enabled": false,
-		"trail_color": Color(1.0, 0.95, 0.6, 0.45),
+		"trail_color": Color(0.88, 0.9, 1.0, 0.5),
 		"trail_amount": 8,
 		"trail_lifetime": 0.16,
 		"trail_scale": 0.55,
-		"color": Color(1.0, 0.9, 0.2, 1.0),
-		"impact_color": Color(1.0, 0.92, 0.35, 0.9),
+		"color": Color(0.85, 0.9, 1.0, 1.0),
+		"impact_color": Color(0.95, 0.98, 1.0, 0.9),
 		"despawn_color": Color(0.8, 0.82, 0.9, 0.72),
 		"impact_effect_scale": 1.0,
 		"despawn_effect_scale": 0.7,
@@ -1035,32 +1128,40 @@ func _projectile_display_profile_for_weapon(weapon_id: String, is_split_child: b
 	}
 	match weapon_id:
 		"pulse":
-			profile["color"] = Color(1.0, 0.95, 0.32, 1.0)
-			profile["impact_color"] = Color(1.0, 0.9, 0.3, 0.95)
+			profile["color"] = Color(0.28, 1.0, 0.66, 1.0)
+			profile["impact_color"] = Color(0.52, 1.0, 0.78, 0.96)
+			profile["scale"] = 1.08
 			profile["shape_points"] = PackedVector2Array([Vector2(0,-6),Vector2(5,0), Vector2(0,6),Vector2(-5, 0)])
 			profile["trail_enabled"] = true
-			profile["trail_color"] = Color(1.0, 0.9, 0.35, 0.46)
+			profile["trail_color"] = Color(0.46, 1.0, 0.72, 0.62)
 			profile["trail_amount"] = 9
 			profile["trail_lifetime"] = 0.14
 			profile["trail_scale"] = 0.52
 			profile["impact_effect_scale"] = 1.15
 			profile["impact_effect_shape"] = PackedVector2Array([Vector2(0,-8),Vector2(3,-3), Vector2(8,0),Vector2(3,3), Vector2(0,8),Vector2(-3,3), Vector2(-8,0),Vector2(-3,-3)])
 		"scatter":
-			profile["color"] = Color(1.0, 0.66, 0.28, 1.0)
-			profile["impact_color"] = Color(1.0, 0.74, 0.32, 0.95)
+			profile["color"] = Color(1.0, 0.36, 0.36, 1.0)
+			profile["impact_color"] = Color(1.0, 0.48, 0.48, 0.95)
+			profile["scale"] = 0.92
 			profile["shape_points"] = PackedVector2Array([Vector2(-5,-3),Vector2(5,-3), Vector2(5,3),Vector2(-5,3)])
 			profile["rotation_follows_direction"] = false
+			profile["trail_enabled"] = true
+			profile["trail_color"] = Color(1.0, 0.42, 0.42, 0.64)
+			profile["trail_amount"] = 7
+			profile["trail_lifetime"] = 0.11
+			profile["trail_scale"] = 0.48
 			profile["impact_effect_scale"] = 0.9
 			profile["despawn_effect_scale"] = 0.65
 			profile["impact_effect_shape"] = PackedVector2Array([Vector2(-8,-1),Vector2(8,-1), Vector2(8,1),Vector2(-8,1)])
 			profile["despawn_effect_shape"] = PackedVector2Array([Vector2(-6,-2),Vector2(0,-1), Vector2(6,-2),Vector2(2,0), Vector2(6,2),Vector2(0,1), Vector2(-6,2),Vector2(-2,0)])
 		"arc":
-			profile["color"] = Color(0.46, 0.95, 1.0, 1.0)
-			profile["impact_color"] = Color(0.56, 0.92, 1.0, 0.95)
-			profile["despawn_color"] = Color(0.42, 0.8, 1.0, 0.7)
+			profile["color"] = Color(0.58, 0.32, 1.0, 1.0)
+			profile["impact_color"] = Color(0.76, 0.48, 1.0, 0.98)
+			profile["despawn_color"] = Color(0.56, 0.42, 0.95, 0.72)
+			profile["scale"] = 1.16
 			profile["shape_points"] = PackedVector2Array([Vector2(0,7),Vector2(5,5), Vector2(-5,5)])
 			profile["trail_enabled"] = true
-			profile["trail_color"] = Color(0.62, 0.98, 1.0, 0.62)
+			profile["trail_color"] = Color(0.7, 0.4, 1.0, 0.76)
 			profile["trail_amount"] = 16
 			profile["trail_lifetime"] = 0.2
 			profile["trail_scale"] = 0.8
@@ -1068,12 +1169,26 @@ func _projectile_display_profile_for_weapon(weapon_id: String, is_split_child: b
 			profile["despawn_effect_scale"] = 0.88
 			profile["impact_effect_shape"] = PackedVector2Array([Vector2(-2,-8),Vector2(2,-3), Vector2(0,-1),Vector2(5,4), Vector2(1,3),Vector2(-1,8), Vector2(-4,3),Vector2(-1,2)])
 			profile["despawn_effect_shape"] = PackedVector2Array([Vector2(0,-6),Vector2(4,-1), Vector2(2,4),Vector2(-2,4), Vector2(-4,-1)])
+		"shock_bomb":
+			profile["color"] = Color(0.12, 0.78, 1.0, 1.0)
+			profile["impact_color"] = Color(0.54, 0.93, 1.0, 0.98)
+			profile["despawn_color"] = Color(0.32, 0.74, 0.96, 0.72)
+			profile["shape_points"] = PackedVector2Array([Vector2(0,-6),Vector2(5,-2), Vector2(5,2),Vector2(0,6), Vector2(-5,2),Vector2(-5,-2)])
+			profile["trail_enabled"] = true
+			profile["trail_color"] = Color(0.34, 0.86, 1.0, 0.7)
+			profile["trail_amount"] = 10
+			profile["trail_lifetime"] = 0.16
+			profile["trail_scale"] = 0.65
+			profile["impact_effect_scale"] = 1.28
+			profile["despawn_effect_scale"] = 0.9
+			profile["impact_effect_shape"] = PackedVector2Array([Vector2(0,-9),Vector2(4,-5), Vector2(9,0),Vector2(4,5), Vector2(0,9),Vector2(-4,5), Vector2(-9,0),Vector2(-4,-5)])
 		"thermobaric":
-			profile["color"] = Color(1.0, 0.48, 0.2, 1.0)
-			profile["impact_color"] = Color(1.0, 0.62, 0.28, 0.96)
+			profile["color"] = Color(1.0, 0.22, 0.08, 1.0)
+			profile["impact_color"] = Color(1.0, 0.38, 0.16, 0.98)
+			profile["scale"] = 1.2
 			profile["shape_points"] = PackedVector2Array([Vector2(0,-7),Vector2(6,-1), Vector2(5,5),Vector2(-5,5), Vector2(-6,-1)])
 			profile["trail_enabled"] = true
-			profile["trail_color"] = Color(1.0, 0.56, 0.22, 0.56)
+			profile["trail_color"] = Color(1.0, 0.3, 0.12, 0.68)
 			profile["trail_amount"] = 12
 			profile["trail_lifetime"] = 0.18
 			profile["trail_scale"] = 0.7
@@ -1190,6 +1305,8 @@ func _update_projectile_state() -> void:
 			var damage_info := DamageInfo.from_values(damage, &"projectile", source_weapon_id)
 			_apply_damage_to_enemy(hit_enemy, damage_info)
 			_record_bullet_hit_enemy(bullet, hit_enemy)
+			if source_weapon_id == &"arc":
+				bullet.target_enemy = null
 			_trigger_projectile_special_effects(bullet, hit_enemy, damage, source_weapon_id)
 			var penetrations_left := int(bullet.get_meta("penetrations_left", 0))
 			if penetrations_left <= 0:
@@ -1246,6 +1363,9 @@ func _trigger_projectile_special_effects(bullet: ProjectileRuntime, hit_enemy: E
 	if source_weapon_id == &"thermobaric":
 		_apply_thermobaric_blast(bullet, hit_enemy.global_position, damage, source_weapon_id)
 
+	if source_weapon_id == &"shock_bomb":
+		pass
+
 	if not bool(bullet.get_meta("can_split", true)):
 		return
 	var split_count := int(bullet.get_meta("split_count", 0))
@@ -1262,6 +1382,57 @@ func _trigger_projectile_special_effects(bullet: ProjectileRuntime, hit_enemy: E
 		var angle_deg := (float(index) - center_index) * spread
 		var split_direction := bullet.direction.rotated(deg_to_rad(angle_deg))
 		_spawn_projectile(split_direction, hit_radius, split_damage, null, String(source_weapon_id), hit_enemy.global_position, false, 0)
+
+func _apply_shock_blast_from_projectile(bullet: ProjectileRuntime, center: Vector2, base_damage: float, source_weapon_id: StringName) -> void:
+	if bullet == null:
+		return
+	var blast_radius := maxf(12.0, float(bullet.get_meta("hit_radius", 56.0)))
+	var stun_duration := maxf(0.0, float(bullet.get_meta("stun_duration", 0.0)))
+	var slow_factor := clampf(float(bullet.get_meta("slow_factor", 1.0)), 0.15, 1.0)
+	var slow_duration := maxf(0.0, float(bullet.get_meta("slow_duration", 0.0)))
+	var shock_knockback := maxf(0.0, float(bullet.get_meta("knockback_distance", 0.0)))
+	var info := DamageInfo.from_values(maxf(0.0, base_damage), &"projectile", source_weapon_id)
+
+	for child in enemy_container.get_children():
+		var enemy := child as EnemyBase
+		if enemy == null:
+			continue
+		if enemy.is_defeated():
+			continue
+		if enemy.global_position.distance_to(center) > blast_radius:
+			continue
+		_apply_damage_to_enemy(enemy, info)
+		if stun_duration > 0.0:
+			enemy.apply_stun(stun_duration)
+		if shock_knockback > 0.0:
+			enemy.apply_knockback(Vector2.UP, shock_knockback)
+		if slow_duration > 0.0 and slow_factor < 1.0:
+			_apply_shock_after_stun_slow(enemy, slow_factor, slow_duration, stun_duration)
+
+	_spawn_shock_slow_field_from_projectile(bullet, center)
+
+func _spawn_shock_slow_field_from_projectile(bullet: ProjectileRuntime, center: Vector2) -> void:
+	if bullet == null:
+		return
+	var field_duration := maxf(0.0, float(bullet.get_meta("field_duration", 0.0)))
+	if field_duration <= 0.0:
+		return
+	var hit_radius := float(bullet.get_meta("hit_radius", 56.0))
+	var field_radius := maxf(8.0, float(bullet.get_meta("field_radius", hit_radius * 1.5)))
+	var field_tick := maxf(0.05, float(bullet.get_meta("field_tick_interval", 0.24)))
+	var slow_factor := clampf(float(bullet.get_meta("slow_factor", 1.0)), 0.15, 1.0)
+	var slow_duration := maxf(0.05, float(bullet.get_meta("slow_duration", 0.0)))
+	if slow_factor >= 1.0:
+		return
+	var field := AOE_FIELD_SCENE.instantiate() as AOEFieldRuntime
+	field.global_position = center
+	field.configure(field_radius, field_tick, field_duration, null)
+	field.modulate = Color(0.44, 0.86, 1.0, 0.55)
+	field.set_meta("slow_factor", slow_factor)
+	field.set_meta("slow_duration", slow_duration)
+	field.pulse.connect(_on_shock_field_pulse.bind(field))
+	field.expired.connect(_on_shock_field_expired)
+	summon_container.add_child(field)
 
 func _apply_thermobaric_blast(bullet: ProjectileRuntime, center: Vector2, base_damage: float, source_weapon_id: StringName) -> void:
 	if bullet == null:
@@ -1293,9 +1464,8 @@ func _apply_thermobaric_blast(bullet: ProjectileRuntime, center: Vector2, base_d
 		_apply_damage_to_enemy(enemy, info)
 
 		if knockback_distance > 0.0:
-			var knock_dir := to_enemy.normalized() if distance > 0.001 else -bullet.direction.normalized()
 			var falloff := 1.0 - clampf(distance / blast_radius, 0.0, 1.0) * 0.35
-			enemy.apply_knockback(knock_dir, knockback_distance * falloff)
+			enemy.apply_knockback(Vector2.UP, knockback_distance * falloff)
 
 		if burn_damage > 0.0 and burn_ticks > 0:
 			_apply_thermobaric_burn_tick(enemy, burn_damage, burn_ticks, burn_interval, source_weapon_id)
@@ -1352,6 +1522,9 @@ func _on_player_died() -> void:
 	if _is_run_over:
 		return
 
+	var player_controller := player as PlayerController
+	if player_controller != null and player_controller.health_component != null:
+		player_controller.health_component.current_health = 0.0
 	_is_run_over = true
 	_is_failed = true
 	GameState.record_run_result(_kill_count, _current_level, _current_wave_index, _run_elapsed_seconds)
@@ -1368,6 +1541,9 @@ func _on_player_died() -> void:
 	GameState.is_paused = false
 	upgrade_panel.visible = false
 	upgrade_history_panel.visible = false
+	_update_health_text()
+	_update_wave_text()
+	_update_progression_text()
 
 func _finish_victory() -> void:
 	if _is_run_over:
@@ -1388,6 +1564,9 @@ func _finish_victory() -> void:
 	GameState.is_paused = false
 	upgrade_panel.visible = false
 	upgrade_history_panel.visible = false
+	_update_health_text()
+	_update_wave_text()
+	_update_progression_text()
 	var best_time_text := "%.1f" % GameState.best_time_seconds
 	if GameState.best_time_seconds >= 999998.0:
 		best_time_text = "--"
@@ -1490,9 +1669,10 @@ func _update_health_text() -> void:
 	var player_controller := player as PlayerController
 	var current_health := player_controller.health_component.current_health
 	var max_health := player_controller.health_component.max_health
+	var display_health := clampf(current_health, 0.0, max_health)
 	health_progress_bar.max_value = maxf(1.0, max_health)
-	health_progress_bar.value = clampf(current_health, 0.0, max_health)
-	health_label.text = "HP: %.0f / %.0f" % [current_health, max_health]
+	health_progress_bar.value = display_health
+	health_label.text = "HP: %.0f / %.0f" % [display_health, max_health]
 
 func _update_kill_text() -> void:
 	kill_label.text = "Kills: %d" % _kill_count
@@ -1536,12 +1716,18 @@ func _refresh_upgrade_options() -> void:
 			var display := _build_upgrade_option_display(option)
 			var card_view := _upgrade_card_views[index]
 			var title_label := card_view.get("title", null) as Label
+			var icon_texture := card_view.get("icon_texture", null) as TextureRect
 			var icon_label := card_view.get("icon", null) as Label
 			var effect_label := card_view.get("effect", null) as Label
+			var icon_texture_value := _weapon_icon_texture_for_option(option)
 			if title_label != null:
 				title_label.text = String(display.get("title", "强化"))
+			if icon_texture != null:
+				icon_texture.texture = icon_texture_value
+				icon_texture.visible = icon_texture_value != null
 			if icon_label != null:
 				icon_label.text = String(display.get("icon", "◆"))
+				icon_label.visible = icon_texture_value == null
 			if effect_label != null:
 				effect_label.text = String(display.get("effect", ""))
 			option_button.visible = true

@@ -1,6 +1,6 @@
-[gd_resource type="Resource" script_class="WeaponEntry" format=3]
+[gd_resource type="Resource" script_class="WeaponEntry" format=3 uid="uid://deiy2obot78uj"]
 
-[ext_resource type="Script" path="res://game/weapons/scripts/weapon_entry.gd" id="1"]
+[ext_resource type="Script" uid="uid://ctnq7m35hy3mx" path="res://game/weapons/scripts/weapon_entry.gd" id="1"]
 
 [resource]
 script = ExtResource("1")
@@ -9,10 +9,9 @@ weapon_name = "震爆弹"
 weapon_kind = &"shock"
 fire_interval = 1.45
 fire_interval_min = 0.48
-projectile_count = 1
-spread_degrees = 0.0
 hit_radius = 56.0
 damage = 16.0
+knockback_distance = 78.0
 stun_duration = 0.65
 slow_factor = 0.78
 slow_duration = 1.1

@@ -176,13 +176,20 @@ func _health_bar_color_for_ratio(ratio: float) -> Color:
 func _show_damage_popup(damage: float) -> void:
 	var damage_label := Label.new()
 	damage_label.text = "%.0f" % damage
-	damage_label.position = Vector2(-10.0, -42.0)
+	var base_font_size := 16
+	var scale_bonus := 0.0
+	if damage > 30.0:
+		scale_bonus = clampf((damage - 30.0) / 90.0, 0.0, 1.0)
+	var popup_scale := 1.0 + scale_bonus * 1.0
+	var popup_font_size := int(round(float(base_font_size) * popup_scale))
+	damage_label.add_theme_font_size_override("font_size", popup_font_size)
+	damage_label.position = Vector2(-10.0 * popup_scale, -42.0 - 6.0 * scale_bonus)
 	damage_label.modulate = Color(1.0, 0.35, 0.35, 1.0)
 	damage_label.z_index = 10
 	damage_layer.add_child(damage_label)
 
 	var tween := create_tween()
-	tween.tween_property(damage_label, "position", damage_label.position + Vector2(0.0, -14.0), 0.35)
+	tween.tween_property(damage_label, "position", damage_label.position + Vector2(0.0, -14.0 - 8.0 * scale_bonus), 0.35)
 	tween.parallel().tween_property(damage_label, "modulate:a", 0.0, 0.35)
 	tween.finished.connect(damage_label.queue_free)
 

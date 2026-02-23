@@ -34,7 +34,20 @@ func _physics_process(delta: float) -> void:
 		return
 
 	if target_enemy != null and is_instance_valid(target_enemy):
-		direction = (target_enemy.global_position - global_position).normalized()
+		var to_target := target_enemy.global_position - global_position
+		if to_target.length_squared() > 4.0:
+			var target_direction := to_target.normalized()
+			if direction.length_squared() > 0.0001 and direction.dot(target_direction) < 0.0:
+				target_enemy = null
+			else:
+				direction = target_direction
+		else:
+			target_enemy = null
+			if direction.length_squared() <= 0.0001:
+				direction = Vector2.UP
+
+	if direction.length_squared() <= 0.0001:
+		direction = Vector2.UP
 
 	if _rotation_follows_direction and direction.length_squared() > 0.0:
 		rotation = direction.angle() + _rotation_offset_radians

@@ -12,12 +12,19 @@ func _ready() -> void:
 	_bgm_player.name = "BGMPlayer"
 	_bgm_player.bus = "Master"
 	_bgm_player.autoplay = false
+	_bgm_player.finished.connect(_on_bgm_finished)
 	add_child(_bgm_player)
 	_ensure_sfx_pool(DEFAULT_SFX_POOL_SIZE)
 
 func play_bgm(stream: AudioStream, volume_db: float = 0.0) -> void:
 	if stream == null:
 		return
+	if stream is AudioStreamOggVorbis:
+		(stream as AudioStreamOggVorbis).loop = true
+	elif stream is AudioStreamMP3:
+		(stream as AudioStreamMP3).loop = true
+	elif stream is AudioStreamWAV:
+		(stream as AudioStreamWAV).loop_mode = AudioStreamWAV.LOOP_FORWARD
 	if _bgm_player.stream != stream:
 		_bgm_player.stream = stream
 	_bgm_player.volume_db = volume_db
@@ -86,3 +93,8 @@ func stop_bgm() -> void:
 	if not _bgm_player.playing:
 		return
 	_bgm_player.stop()
+
+func _on_bgm_finished() -> void:
+	if _bgm_player.stream == null:
+		return
+	_bgm_player.play()
