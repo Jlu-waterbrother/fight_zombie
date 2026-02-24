@@ -67,6 +67,7 @@ const SFX_KEY_LEVEL_UP: StringName = &"run_level_up"
 @export var exp_per_kill := 12
 @export var exp_to_level_base := 40
 @export var exp_to_level_growth := 1.32
+@export var projectile_burst_shot_delay := 0.03
 @export_group("Audio")
 @export var run_bgm_stream: AudioStream
 @export var run_bgm_volume_db := -8.0
@@ -1142,12 +1143,27 @@ func _fire_weapon(weapon: Dictionary) -> bool:
 		_spawn_projectile(base_direction, hit_radius, damage, nearest_enemy, weapon_id)
 		return true
 
+	_spawn_sequential_projectile_burst(base_direction, projectile_count, spread_degrees, hit_radius, damage, nearest_enemy, weapon_id, float(weapon.fire_interval))
+	return true
+
+func _spawn_sequential_projectile_burst(base_direction: Vector2, projectile_count: int, spread_degrees: float, hit_radius: float, damage: float, target_enemy: EnemyBase, weapon_id: String, fire_interval: float) -> void:
 	var center_index := float(projectile_count - 1) * 0.5
+	var delay_cap := maxf(0.008, fire_interval / maxf(2.0, float(projectile_count)))
+	var shot_delay := minf(maxf(0.005, projectile_burst_shot_delay), delay_cap)
 	for i in projectile_count:
 		var angle_deg := (float(i) - center_index) * spread_degrees
-		var direction := base_direction.rotated(deg_to_rad(angle_deg))
-		_spawn_projectile(direction, hit_radius, damage, nearest_enemy, weapon_id)
-	return true
+		var shot_direction := base_direction.rotated(deg_to_rad(angle_deg))
+		if i == 0:
+			_spawn_projectile(shot_direction, hit_radius, damage, target_enemy, weapon_id)
+			continue
+		var shot_index := i
+		var timer := get_tree().create_timer(shot_delay * float(shot_index))
+		timer.timeout.connect(_spawn_projectile_if_active.bind(shot_direction, hit_radius, damage, target_enemy, weapon_id))
+
+func _spawn_projectile_if_active(direction: Vector2, hit_radius: float, damage: float, target_enemy: EnemyBase, weapon_id: String) -> void:
+	if _is_run_over or GameState.is_paused:
+		return
+	_spawn_projectile(direction, hit_radius, damage, target_enemy, weapon_id)
 
 func _spawn_black_hole(weapon: Dictionary, target_enemy: EnemyBase, damage: float) -> void:
 	var spawn_position := player.global_position + Vector2(0.0, -120.0)
@@ -2262,7 +2278,7 @@ func _build_weapon_upgrade_options(weapon_id: String) -> Array[Dictionary]:
 	elif weapon_id == "shock_bomb":
 		upgrade_types = [UPGRADE_SHOCK_STUN_DURATION, UPGRADE_DAMAGE, UPGRADE_PROJECTILE_COUNT, UPGRADE_SHOCK_AFTER_SLOW, UPGRADE_FIRE_RATE]
 	else:
-		upgrade_types = [UPGRADE_DAMAGE, UPGRADE_FIRE_RATE, UPGRADE_PROJECTILE_COUNT, UPGRADE_HIT_RADIUS, UPGRADE_PIERCE, UPGRADE_SPLIT, UPGRADE_EXPLOSION]
+		upgrade_types = [UPGRADE_DAMAGE, UPGRADE_FIRE_RATE, UPGRADE_PROJECTILE_COUNT, UPGRADE_PIERCE, UPGRADE_SPLIT, UPGRADE_EXPLOSION]
 		if weapon_id == "pulse":
 			upgrade_types.append(UPGRADE_PULSE_OVERLOAD)
 		elif weapon_id == "scatter":
@@ -2398,18 +2414,16 @@ func _build_weapon_upgrade_option(weapon_id: String, upgrade_type: StringName) -
 		UPGRADE_PULSE_OVERLOAD:
 			var before_pulse_interval := float(weapon.fire_interval)
 			var after_pulse_interval := maxf(float(weapon.fire_interval_min), before_pulse_interval * 0.92)
-			var before_pulse_radius := float(weapon.hit_radius)
-			var after_pulse_radius := minf(60.0, before_pulse_radius + 2.0)
-			if is_equal_approx(before_pulse_interval, after_pulse_interval) and is_equal_approx(before_pulse_radius, after_pulse_radius):
-				return {}
 			var before_pulse_rate := 1.0 / maxf(0.05, before_pulse_interval)
 			var after_pulse_rate := 1.0 / maxf(0.05, after_pulse_interval)
+			var before_pulse_damage := float(weapon.damage)
+			var after_pulse_damage := before_pulse_damage * 1.1
 			return {
 				"type": OPTION_WEAPON_UPGRADE,
 				"weapon_id": weapon_id,
 				"upgrade_type": UPGRADE_PULSE_OVERLOAD,
 				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_PULSE_OVERLOAD)],
-				"label": "%s · 脉冲过载\n射速 %.2f/s -> %.2f/s，命中范围 %.0f -> %.0f" % [weapon_name, before_pulse_rate, after_pulse_rate, before_pulse_radius, after_pulse_radius],
+				"label": "%s · 脉冲过载\n射速 %.2f/s -> %.2f/s，伤害 %.1f -> %.1f" % [weapon_name, before_pulse_rate, after_pulse_rate, before_pulse_damage, after_pulse_damage],
 			}
 		UPGRADE_SCATTER_BARRAGE:
 			var before_scatter_count := int(weapon.projectile_count)
@@ -2674,7 +2688,7 @@ func _apply_weapon_upgrade(weapon_id: String, upgrade_type: StringName) -> void:
 			weapon.explosion_damage_ratio = minf(0.9, float(weapon.get("explosion_damage_ratio", 0.0)) + 0.12)
 		UPGRADE_PULSE_OVERLOAD:
 			weapon.fire_interval = maxf(float(weapon.fire_interval_min), float(weapon.fire_interval) * 0.92)
-			weapon.hit_radius = minf(60.0, float(weapon.hit_radius) + 2.0)
+			weapon.damage = float(weapon.damage) * 1.1
 		UPGRADE_SCATTER_BARRAGE:
 			weapon.projectile_count = min(9, int(weapon.projectile_count) + 1)
 			weapon.spread_degrees = minf(28.0, float(weapon.spread_degrees) + 2.0)
