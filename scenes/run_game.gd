@@ -115,6 +115,7 @@ const SFX_KEY_LEVEL_UP: StringName = &"run_level_up"
 }
 
 @onready var ui_layer: CanvasLayer = $UILayer
+@onready var background_image: Sprite2D = $BackgroundImage
 @onready var player: CharacterBody2D = $Player
 @onready var enemy_container: Node2D = $EnemyContainer
 @onready var bullet_container: Node2D = $BulletContainer
@@ -186,6 +187,10 @@ func _ready() -> void:
 	GameState.reset_run_state()
 	GameState.start_run()
 	_start_run_audio()
+	var root := get_tree().root
+	if root != null and not root.size_changed.is_connected(_on_root_size_changed):
+		root.size_changed.connect(_on_root_size_changed)
+	_refresh_viewport_dependent_layout()
 
 	var player_controller := player as PlayerController
 	player_controller.health_component.died.connect(_on_player_died)
@@ -217,9 +222,12 @@ func _ready() -> void:
 	_update_progression_text()
 	_update_weapon_text()
 	_update_weapon_cooldown_hud()
-	_center_overlay_panels()
+	_refresh_viewport_dependent_layout()
 
 func _exit_tree() -> void:
+	var root := get_tree().root
+	if root != null and root.size_changed.is_connected(_on_root_size_changed):
+		root.size_changed.disconnect(_on_root_size_changed)
 	_stop_run_audio()
 
 func _start_run_audio() -> void:
@@ -429,6 +437,35 @@ func _on_weapon_cooldown_hud_gui_input(event: InputEvent) -> void:
 		var mouse_event := event as InputEventMouseButton
 		if mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.pressed:
 			_on_toggle_upgrade_history_pressed()
+
+func _on_root_size_changed() -> void:
+	_refresh_viewport_dependent_layout()
+
+func _refresh_viewport_dependent_layout() -> void:
+	_fit_background_to_viewport()
+	_align_player_to_viewport()
+	_center_overlay_panels()
+	_reposition_weapon_cooldown_hud()
+
+func _fit_background_to_viewport() -> void:
+	if background_image == null:
+		return
+	if background_image.texture == null:
+		return
+	var texture_size := background_image.texture.get_size()
+	if texture_size.x <= 0.0 or texture_size.y <= 0.0:
+		return
+	var viewport_size := get_viewport_rect().size
+	var scale_factor := maxf(viewport_size.x / texture_size.x, viewport_size.y / texture_size.y)
+	background_image.scale = Vector2.ONE * scale_factor
+	background_image.position = Vector2.ZERO
+
+func _align_player_to_viewport() -> void:
+	var player_controller := player as PlayerController
+	if player_controller == null:
+		return
+	var viewport_size := get_viewport_rect().size
+	player_controller.global_position = Vector2(viewport_size.x * 0.5, viewport_size.y - PlayerController.BOTTOM_MARGIN)
 
 func _center_overlay_panels() -> void:
 	_center_panel(upgrade_panel)
