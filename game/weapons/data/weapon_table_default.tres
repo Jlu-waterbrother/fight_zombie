@@ -9,7 +9,8 @@
 [ext_resource type="Resource" uid="uid://d3ainwpvt6cks" path="res://game/weapons/data/arc_weapon.tres" id="6"]
 [ext_resource type="Resource" path="res://game/weapons/data/thermobaric_weapon.tres" id="7"]
 [ext_resource type="Resource" path="res://game/weapons/data/shock_bomb_weapon.tres" id="8"]
+[ext_resource type="Resource" path="res://game/weapons/data/dry_ice_weapon.tres" id="9"]
 
 [resource]
 script = ExtResource("1")
-entries = Array[ExtResource("1_a6yut")]([ExtResource("2"), ExtResource("3"), ExtResource("4"), ExtResource("5"), ExtResource("6"), ExtResource("7"), ExtResource("8")])
+entries = Array[ExtResource("1_a6yut")]([ExtResource("2"), ExtResource("3"), ExtResource("4"), ExtResource("5"), ExtResource("6"), ExtResource("7"), ExtResource("8"), ExtResource("9")])

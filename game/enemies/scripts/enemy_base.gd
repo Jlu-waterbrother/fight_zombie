@@ -42,6 +42,8 @@ var _knockback_damping := 980.0
 var _stun_time_left := 0.0
 var _slow_time_left := 0.0
 var _slow_factor := 1.0
+var _damage_taken_time_left := 0.0
+var _damage_taken_multiplier := 1.0
 
 func _ready() -> void:
 	_base_modulate = modulate
@@ -89,6 +91,11 @@ func _physics_process(delta: float) -> void:
 		if _slow_time_left <= 0.0:
 			_slow_time_left = 0.0
 			_slow_factor = 1.0
+	if _damage_taken_time_left > 0.0:
+		_damage_taken_time_left -= delta
+		if _damage_taken_time_left <= 0.0:
+			_damage_taken_time_left = 0.0
+			_damage_taken_multiplier = 1.0
 
 	if _stun_time_left > 0.0:
 		_is_attacking = false
@@ -125,6 +132,7 @@ func apply_damage_info(info: DamageInfo) -> bool:
 		return false
 
 	var final_damage := maxf(0.0, info.amount)
+	final_damage *= maxf(1.0, _damage_taken_multiplier)
 	if final_damage <= 0.0:
 		return false
 
@@ -295,6 +303,8 @@ func _apply_runtime_config(next_attack_line_y: float, next_attack_damage: float,
 	_stun_time_left = 0.0
 	_slow_time_left = 0.0
 	_slow_factor = 1.0
+	_damage_taken_time_left = 0.0
+	_damage_taken_multiplier = 1.0
 	scale = Vector2.ONE
 	modulate = _base_modulate
 	_current_anim_state = &""
@@ -341,3 +351,13 @@ func apply_slow(multiplier: float, duration: float) -> void:
 	else:
 		_slow_factor = minf(_slow_factor, factor)
 	_slow_time_left = maxf(_slow_time_left, slow_duration)
+
+func apply_damage_taken_multiplier(multiplier: float, duration: float) -> void:
+	if _is_dead:
+		return
+	var vulnerable_duration := maxf(0.0, duration)
+	if vulnerable_duration <= 0.0:
+		return
+	var factor := maxf(1.0, multiplier)
+	_damage_taken_multiplier = maxf(_damage_taken_multiplier, factor)
+	_damage_taken_time_left = maxf(_damage_taken_time_left, vulnerable_duration)

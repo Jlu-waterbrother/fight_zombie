@@ -13,6 +13,22 @@ const BOSS_WAVE_20_SCENE := preload("res://game/enemies/scenes/zombie_boss_overl
 const WEAPON_COOLDOWN_ICON_SCENE := preload("res://game/ui/scripts/weapon_cooldown_icon.gd")
 const DEFAULT_WEAPON_TABLE := preload("res://game/weapons/data/weapon_table_default.tres")
 const DEFAULT_ENEMY_TABLE := preload("res://game/enemies/data/enemy_table_default.tres")
+const PULSE_ICON_TEXTURE := preload("res://assets/art/image/pulse_weapon_icon.svg")
+const PULSE_BULLET_TEXTURE := preload("res://assets/art/image/pulse_bullet.svg")
+const LASER_ICON_TEXTURE := preload("res://assets/art/image/laser_weapon_icon.svg")
+const LASER_BULLET_TEXTURE := preload("res://assets/art/image/laser_bullet.svg")
+const BLACKHOLE_ICON_TEXTURE := preload("res://assets/art/image/blackhole_weapon_icon.svg")
+const BLACKHOLE_BULLET_TEXTURE := preload("res://assets/art/image/blackhole_bullet.svg")
+const SCATTER_ICON_TEXTURE := preload("res://assets/art/image/scatter_weapon_icon.svg")
+const SCATTER_BULLET_TEXTURE := preload("res://assets/art/image/scatter_bullet.svg")
+const ARC_ICON_TEXTURE := preload("res://assets/art/image/arc_weapon_icon.svg")
+const ARC_BULLET_TEXTURE := preload("res://assets/art/image/arc_bullet.svg")
+const THERMOBARIC_ICON_TEXTURE := preload("res://assets/art/image/thermobaric_weapon_icon.svg")
+const THERMOBARIC_BULLET_TEXTURE := preload("res://assets/art/image/thermobaric_bullet.svg")
+const SHOCK_BOMB_ICON_TEXTURE := preload("res://assets/art/image/shock_bomb_weapon_icon.svg")
+const SHOCK_BOMB_BULLET_TEXTURE := preload("res://assets/art/image/shock_bomb_bullet.svg")
+const DRY_ICE_ICON_TEXTURE := preload("res://assets/art/image/dry_ice_weapon_icon.svg")
+const DRY_ICE_BULLET_TEXTURE := preload("res://assets/art/image/dry_ice_bullet.svg")
 const UPGRADE_OPTION_COUNT := 3
 const PREFERRED_WEAPON_COUNT := 3
 const OPTION_UNLOCK_WEAPON: StringName = &"unlock_weapon"
@@ -41,6 +57,9 @@ const UPGRADE_THERMOBARIC_KNOCKBACK: StringName = &"thermobaric_knockback"
 const UPGRADE_THERMOBARIC_BURN: StringName = &"thermobaric_burn"
 const UPGRADE_SHOCK_STUN_DURATION: StringName = &"shock_stun_duration"
 const UPGRADE_SHOCK_AFTER_SLOW: StringName = &"shock_after_slow"
+const UPGRADE_DRY_ICE_STUN_DURATION: StringName = &"dry_ice_stun_duration"
+const UPGRADE_DRY_ICE_VULNERABILITY: StringName = &"dry_ice_vulnerability"
+const UPGRADE_DRY_ICE_SLOW: StringName = &"dry_ice_slow"
 const SFX_KEY_SHOOT: StringName = &"run_shoot"
 const SFX_KEY_HIT: StringName = &"run_hit"
 const SFX_KEY_LEVEL_UP: StringName = &"run_level_up"
@@ -103,7 +122,8 @@ const SFX_KEY_LEVEL_UP: StringName = &"run_level_up"
 	"scatter": Vector2i(3, 0),
 	"arc": Vector2i(4, 0),
 	"thermobaric": Vector2i(5, 0),
-	"shock_bomb": Vector2i(6, 0)
+	"shock_bomb": Vector2i(6, 0),
+	"dry_ice": Vector2i(7, 0)
 }
 @export var weapon_bullet_overrides: Dictionary = {
 	"pulse": Vector2i(0, 0),
@@ -112,7 +132,8 @@ const SFX_KEY_LEVEL_UP: StringName = &"run_level_up"
 	"scatter": Vector2i(3, 0),
 	"arc": Vector2i(4, 0),
 	"thermobaric": Vector2i(5, 0),
-	"shock_bomb": Vector2i(6, 0)
+	"shock_bomb": Vector2i(6, 0),
+	"dry_ice": Vector2i(7, 0)
 }
 
 @onready var ui_layer: CanvasLayer = $UILayer
@@ -446,6 +467,7 @@ func _refresh_viewport_dependent_layout() -> void:
 	_fit_background_to_viewport()
 	_align_player_to_viewport()
 	_center_overlay_panels()
+	_resize_upgrade_option_buttons()
 	_reposition_weapon_cooldown_hud()
 
 func _fit_background_to_viewport() -> void:
@@ -471,6 +493,8 @@ func _align_player_to_viewport() -> void:
 func _center_overlay_panels() -> void:
 	_center_panel(upgrade_panel)
 	_center_panel(upgrade_history_panel)
+	_center_panel(fail_panel)
+	_center_panel(victory_panel)
 
 func _center_panel(panel: PanelContainer) -> void:
 	if panel == null:
@@ -483,8 +507,31 @@ func _center_panel(panel: PanelContainer) -> void:
 		panel_size = panel.custom_minimum_size
 	if panel_size.x <= 1.0 or panel_size.y <= 1.0:
 		panel_size = Vector2(560.0, 360.0)
+	var viewport_margin := Vector2(24.0, 24.0)
+	var max_panel_size := Vector2(
+		maxf(220.0, viewport_size.x - viewport_margin.x),
+		maxf(180.0, viewport_size.y - viewport_margin.y)
+	)
+	panel_size.x = minf(panel_size.x, max_panel_size.x)
+	panel_size.y = minf(panel_size.y, max_panel_size.y)
 	panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	panel.custom_minimum_size = panel_size
+	panel.size = panel_size
 	panel.position = (viewport_size - panel_size) * 0.5
+
+func _resize_upgrade_option_buttons() -> void:
+	if _upgrade_buttons.is_empty():
+		return
+	var viewport_width := get_viewport_rect().size.x
+	var panel_inner_guess := maxf(320.0, viewport_width - 120.0)
+	var gap_total := 20.0
+	var card_width := clampf((panel_inner_guess - gap_total) / 3.0, 120.0, 190.0)
+	var card_height := clampf(card_width * 1.15, 170.0, 228.0)
+	for button_value in _upgrade_buttons:
+		var option_button := button_value as Button
+		if option_button == null:
+			continue
+		option_button.custom_minimum_size = Vector2(card_width, card_height)
 
 func _reposition_weapon_cooldown_hud() -> void:
 	if _weapon_cooldown_hud_panel == null:
@@ -543,6 +590,23 @@ func _weapon_total_pick_count(weapon_id: String) -> int:
 	return 1 + max(0, total_upgrades)
 
 func _weapon_icon_texture_for_weapon_id(weapon_id: String) -> Texture2D:
+	match weapon_id:
+		"pulse":
+			return PULSE_ICON_TEXTURE
+		"laser":
+			return LASER_ICON_TEXTURE
+		"blackhole":
+			return BLACKHOLE_ICON_TEXTURE
+		"scatter":
+			return SCATTER_ICON_TEXTURE
+		"arc":
+			return ARC_ICON_TEXTURE
+		"thermobaric":
+			return THERMOBARIC_ICON_TEXTURE
+		"shock_bomb":
+			return SHOCK_BOMB_ICON_TEXTURE
+	if weapon_id == "dry_ice":
+		return DRY_ICE_ICON_TEXTURE
 	if weapon_icon_atlas == null:
 		return null
 	if weapon_id == "":
@@ -556,6 +620,23 @@ func _weapon_icon_texture_for_weapon_id(weapon_id: String) -> Texture2D:
 	return atlas_texture
 
 func _weapon_bullet_texture_for_weapon_id(weapon_id: String) -> Texture2D:
+	match weapon_id:
+		"pulse":
+			return PULSE_BULLET_TEXTURE
+		"laser":
+			return LASER_BULLET_TEXTURE
+		"blackhole":
+			return BLACKHOLE_BULLET_TEXTURE
+		"scatter":
+			return SCATTER_BULLET_TEXTURE
+		"arc":
+			return ARC_BULLET_TEXTURE
+		"thermobaric":
+			return THERMOBARIC_BULLET_TEXTURE
+		"shock_bomb":
+			return SHOCK_BOMB_BULLET_TEXTURE
+	if weapon_id == "dry_ice":
+		return DRY_ICE_BULLET_TEXTURE
 	if weapon_icon_atlas == null:
 		return null
 	if weapon_id == "":
@@ -579,7 +660,7 @@ func _setup_upgrade_buttons() -> void:
 		option_button.flat = false
 		option_button.text = ""
 		option_button.focus_mode = Control.FOCUS_NONE
-		option_button.custom_minimum_size = Vector2(190.0, 228.0)
+		option_button.custom_minimum_size = Vector2(160.0, 200.0)
 		option_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		option_button.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		option_button.pressed.connect(_on_pick_upgrade.bind(index))
@@ -636,6 +717,8 @@ func _setup_upgrade_buttons() -> void:
 			"icon": icon_label,
 			"effect": effect_label,
 		})
+
+	_resize_upgrade_option_buttons()
 
 func _init_random_weapon_icon_regions() -> void:
 	_weapon_icon_region_by_id.clear()
@@ -1035,6 +1118,7 @@ func _init_weapon_pool() -> void:
 			"hit_radius": float(entry.hit_radius),
 			"damage": float(entry.damage),
 			"projectile_penetration": max(0, int(entry.projectile_penetration)),
+			"infinite_penetration": bool(entry.infinite_penetration),
 			"split_count": 0,
 			"split_damage_ratio": 0.52,
 			"explosion_radius": maxf(0.0, float(entry.explosion_radius)),
@@ -1046,6 +1130,8 @@ func _init_weapon_pool() -> void:
 			"stun_duration": maxf(0.0, float(entry.stun_duration)),
 			"slow_factor": clampf(float(entry.slow_factor), 0.15, 1.0),
 			"slow_duration": maxf(0.0, float(entry.slow_duration)),
+			"vulnerability_multiplier": maxf(1.0, float(entry.vulnerability_multiplier)),
+			"vulnerability_duration": maxf(0.0, float(entry.vulnerability_duration)),
 			"field_duration": maxf(0.0, float(entry.field_duration)),
 			"field_tick_interval": maxf(0.05, float(entry.field_tick_interval)),
 			"field_radius": maxf(0.0, float(entry.field_radius)),
@@ -1355,6 +1441,7 @@ func _spawn_projectile(direction: Vector2, hit_radius: float, damage: float, tar
 	if penetration_override >= 0:
 		penetration = penetration_override
 	bullet.set_meta("penetrations_left", penetration)
+	bullet.set_meta("infinite_penetration", bool(weapon.get("infinite_penetration", false)) and penetration_override < 0)
 	bullet.set_meta("split_count", int(weapon.get("split_count", 0)))
 	bullet.set_meta("split_damage_ratio", float(weapon.get("split_damage_ratio", 0.52)))
 	bullet.set_meta("explosion_radius", float(weapon.get("explosion_radius", 0.0)))
@@ -1366,6 +1453,8 @@ func _spawn_projectile(direction: Vector2, hit_radius: float, damage: float, tar
 	bullet.set_meta("stun_duration", float(weapon.get("stun_duration", 0.0)))
 	bullet.set_meta("slow_factor", float(weapon.get("slow_factor", 1.0)))
 	bullet.set_meta("slow_duration", float(weapon.get("slow_duration", 0.0)))
+	bullet.set_meta("vulnerability_multiplier", float(weapon.get("vulnerability_multiplier", 1.0)))
+	bullet.set_meta("vulnerability_duration", float(weapon.get("vulnerability_duration", 0.0)))
 	bullet.set_meta("field_duration", float(weapon.get("field_duration", 0.0)))
 	bullet.set_meta("field_tick_interval", float(weapon.get("field_tick_interval", 0.24)))
 	bullet.set_meta("field_radius", float(weapon.get("field_radius", 0.0)))
@@ -1457,6 +1546,22 @@ func _projectile_display_profile_for_weapon(weapon_id: String, is_split_child: b
 			profile["impact_effect_scale"] = 1.28
 			profile["despawn_effect_scale"] = 0.9
 			profile["impact_effect_shape"] = PackedVector2Array([Vector2(0,-9),Vector2(4,-5), Vector2(9,0),Vector2(4,5), Vector2(0,9),Vector2(-4,5), Vector2(-9,0),Vector2(-4,-5)])
+		"dry_ice":
+			profile["texture"] = _weapon_bullet_texture_for_weapon_id("dry_ice")
+			profile["speed"] = 700.0
+			profile["color"] = Color(0.76, 0.94, 1.0, 1.0)
+			profile["impact_color"] = Color(0.88, 0.98, 1.0, 0.98)
+			profile["despawn_color"] = Color(0.64, 0.84, 0.98, 0.74)
+			profile["scale"] = 1.08
+			profile["shape_points"] = PackedVector2Array([Vector2(0,-8),Vector2(6,-1), Vector2(3,7),Vector2(-3,7), Vector2(-6,-1)])
+			profile["trail_enabled"] = true
+			profile["trail_color"] = Color(0.8, 0.96, 1.0, 0.72)
+			profile["trail_amount"] = 9
+			profile["trail_lifetime"] = 0.2
+			profile["trail_scale"] = 0.7
+			profile["impact_effect_scale"] = 1.2
+			profile["despawn_effect_scale"] = 0.86
+			profile["impact_effect_shape"] = PackedVector2Array([Vector2(0,-9),Vector2(5,-4), Vector2(9,0),Vector2(5,4), Vector2(0,9),Vector2(-5,4), Vector2(-9,0),Vector2(-5,-4)])
 		"thermobaric":
 			profile["texture"] = _weapon_bullet_texture_for_weapon_id("thermobaric")
 			profile["speed"] = 620.0
@@ -1585,11 +1690,32 @@ func _update_projectile_state() -> void:
 			if source_weapon_id == &"arc":
 				bullet.target_enemy = null
 			_trigger_projectile_special_effects(bullet, hit_enemy, damage, source_weapon_id)
+			if source_weapon_id == &"dry_ice":
+				_apply_dry_ice_hit_effects(bullet, hit_enemy)
+			if bool(bullet.get_meta("infinite_penetration", false)):
+				continue
 			var penetrations_left := int(bullet.get_meta("penetrations_left", 0))
 			if penetrations_left <= 0:
 				bullet.despawn(&"impact")
 				continue
 			bullet.set_meta("penetrations_left", penetrations_left - 1)
+
+func _apply_dry_ice_hit_effects(bullet: ProjectileRuntime, target_enemy: EnemyBase) -> void:
+	if bullet == null or target_enemy == null:
+		return
+	if target_enemy.is_defeated():
+		return
+	var stun_duration := maxf(0.0, float(bullet.get_meta("stun_duration", 0.0)))
+	if stun_duration > 0.0:
+		target_enemy.apply_stun(stun_duration)
+	var slow_factor := clampf(float(bullet.get_meta("slow_factor", 1.0)), 0.15, 1.0)
+	var slow_duration := maxf(0.0, float(bullet.get_meta("slow_duration", 0.0)))
+	if slow_duration > 0.0 and slow_factor < 1.0:
+		target_enemy.apply_slow(slow_factor, slow_duration)
+	var vulnerability_multiplier := maxf(1.0, float(bullet.get_meta("vulnerability_multiplier", 1.0)))
+	var vulnerability_duration := maxf(0.0, float(bullet.get_meta("vulnerability_duration", 0.0)))
+	if vulnerability_duration > 0.0 and vulnerability_multiplier > 1.0:
+		target_enemy.apply_damage_taken_multiplier(vulnerability_multiplier, vulnerability_duration)
 
 func _on_enemy_defeated(enemy: EnemyBase) -> void:
 	if enemy == null:
@@ -1812,6 +1938,7 @@ func _on_player_died() -> void:
 		child.queue_free()
 	for child in summon_container.get_children():
 		child.queue_free()
+	_center_overlay_panels()
 	fail_panel.visible = true
 	victory_panel.visible = false
 	_is_upgrade_open = false
@@ -1835,6 +1962,7 @@ func _finish_victory() -> void:
 		child.queue_free()
 	for child in summon_container.get_children():
 		child.queue_free()
+	_center_overlay_panels()
 	victory_panel.visible = true
 	fail_panel.visible = false
 	_is_upgrade_open = false
@@ -2158,6 +2286,12 @@ func _icon_for_upgrade_type(upgrade_type: StringName) -> String:
 			return "⛔"
 		UPGRADE_SHOCK_AFTER_SLOW:
 			return "🐢"
+		UPGRADE_DRY_ICE_STUN_DURATION:
+			return "❄"
+		UPGRADE_DRY_ICE_VULNERABILITY:
+			return "⬚"
+		UPGRADE_DRY_ICE_SLOW:
+			return "🧊"
 	return "◆"
 
 func _upgrade_name_for_type(upgrade_type: StringName) -> String:
@@ -2210,6 +2344,12 @@ func _upgrade_name_for_type(upgrade_type: StringName) -> String:
 			return "震荡延时"
 		UPGRADE_SHOCK_AFTER_SLOW:
 			return "震后迟滞"
+		UPGRADE_DRY_ICE_STUN_DURATION:
+			return "低温震颤"
+		UPGRADE_DRY_ICE_VULNERABILITY:
+			return "脆化易伤"
+		UPGRADE_DRY_ICE_SLOW:
+			return "霜冻迟缓"
 	return String(upgrade_type)
 
 func _icon_for_weapon(weapon_id: String) -> String:
@@ -2228,6 +2368,8 @@ func _icon_for_weapon(weapon_id: String) -> String:
 			return "☄"
 		"shock_bomb":
 			return "💥"
+		"dry_ice":
+			return "❄"
 	return "◆"
 
 func _build_unlock_options() -> Array[Dictionary]:
@@ -2258,6 +2400,9 @@ func _build_weapon_unlock_summary(weapon: Dictionary) -> String:
 		return "脉冲 %.1f | 跳频 %.2f/s | 范围 %.0f" % [float(weapon.damage), summon_rate, float(weapon.summon_radius)]
 	if weapon_kind == &"shock":
 		return "伤害 %.1f | 眩晕 %.2fs | 爆炸半径 %.0f" % [float(weapon.damage), float(weapon.get("stun_duration", 0.0)), float(weapon.hit_radius)]
+	if String(weapon.get("id", "")) == "dry_ice":
+		var vulnerability_ratio := (maxf(1.0, float(weapon.get("vulnerability_multiplier", 1.0))) - 1.0) * 100.0
+		return "伤害 %.1f | 无限穿透 | 易伤 +%.0f%%" % [float(weapon.damage), vulnerability_ratio]
 	if String(weapon.get("id", "")) == "thermobaric":
 		return "伤害 %.1f | 射速 %.2f/s | 冲击半径 %.0f" % [float(weapon.damage), rate, float(weapon.hit_radius) * 1.8]
 	return "伤害 %.1f | 射速 %.2f/s | 弹丸 %d" % [float(weapon.damage), rate, int(weapon.projectile_count)]
@@ -2277,6 +2422,8 @@ func _build_weapon_upgrade_options(weapon_id: String) -> Array[Dictionary]:
 		upgrade_types = [UPGRADE_PROJECTILE_COUNT, UPGRADE_THERMOBARIC_KNOCKBACK, UPGRADE_THERMOBARIC_BURN, UPGRADE_FIRE_RATE, UPGRADE_HIT_RADIUS]
 	elif weapon_id == "shock_bomb":
 		upgrade_types = [UPGRADE_SHOCK_STUN_DURATION, UPGRADE_DAMAGE, UPGRADE_PROJECTILE_COUNT, UPGRADE_SHOCK_AFTER_SLOW, UPGRADE_FIRE_RATE]
+	elif weapon_id == "dry_ice":
+		upgrade_types = [UPGRADE_PROJECTILE_COUNT, UPGRADE_FIRE_RATE, UPGRADE_DRY_ICE_STUN_DURATION, UPGRADE_DRY_ICE_VULNERABILITY, UPGRADE_DRY_ICE_SLOW]
 	else:
 		upgrade_types = [UPGRADE_DAMAGE, UPGRADE_FIRE_RATE, UPGRADE_PROJECTILE_COUNT, UPGRADE_PIERCE, UPGRADE_SPLIT, UPGRADE_EXPLOSION]
 		if weapon_id == "pulse":
@@ -2327,6 +2474,8 @@ func _build_weapon_upgrade_option(weapon_id: String, upgrade_type: StringName) -
 			var max_count := 4 if weapon_id == "thermobaric" else 8
 			if weapon_id == "shock_bomb":
 				max_count = 5
+			if weapon_id == "dry_ice":
+				max_count = 6
 			if before_count >= max_count:
 				return {}
 			var after_count := before_count + 1
@@ -2345,6 +2494,14 @@ func _build_weapon_upgrade_option(weapon_id: String, upgrade_type: StringName) -
 					"upgrade_type": UPGRADE_PROJECTILE_COUNT,
 					"option_key": "%s:%s" % [weapon_id, String(UPGRADE_PROJECTILE_COUNT)],
 					"label": "%s · 连环震爆\n每次释放爆震次数 %d -> %d" % [weapon_name, before_count, after_count],
+				}
+			if weapon_id == "dry_ice":
+				return {
+					"type": OPTION_WEAPON_UPGRADE,
+					"weapon_id": weapon_id,
+					"upgrade_type": UPGRADE_PROJECTILE_COUNT,
+					"option_key": "%s:%s" % [weapon_id, String(UPGRADE_PROJECTILE_COUNT)],
+					"label": "%s · 冷凝并行\n弹丸数量 %d -> %d" % [weapon_name, before_count, after_count],
 				}
 			return {
 				"type": OPTION_WEAPON_UPGRADE,
@@ -2629,6 +2786,46 @@ func _build_weapon_upgrade_option(weapon_id: String, upgrade_type: StringName) -
 				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_SHOCK_AFTER_SLOW)],
 				"label": "%s · 震后迟滞\n减速系数 %.2f -> %.2f，减速时长 %.2fs -> %.2fs" % [weapon_name, before_slow_factor, after_slow_factor, before_slow_duration, after_slow_duration],
 			}
+		UPGRADE_DRY_ICE_STUN_DURATION:
+			var before_dry_ice_stun := float(weapon.get("stun_duration", 0.0))
+			if before_dry_ice_stun >= 2.6:
+				return {}
+			var after_dry_ice_stun := minf(2.6, before_dry_ice_stun + 0.24)
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_DRY_ICE_STUN_DURATION,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_DRY_ICE_STUN_DURATION)],
+				"label": "%s · 低温震颤\n眩晕时长 %.2fs -> %.2fs" % [weapon_name, before_dry_ice_stun, after_dry_ice_stun],
+			}
+		UPGRADE_DRY_ICE_VULNERABILITY:
+			var before_vulnerability := maxf(1.0, float(weapon.get("vulnerability_multiplier", 1.0)))
+			var before_vulnerability_duration := maxf(0.0, float(weapon.get("vulnerability_duration", 0.0)))
+			var after_vulnerability := minf(1.85, before_vulnerability + 0.12)
+			var after_vulnerability_duration := minf(5.0, before_vulnerability_duration + 0.45)
+			if is_equal_approx(before_vulnerability, after_vulnerability) and is_equal_approx(before_vulnerability_duration, after_vulnerability_duration):
+				return {}
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_DRY_ICE_VULNERABILITY,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_DRY_ICE_VULNERABILITY)],
+				"label": "%s · 脆化易伤\n易伤 +%.0f%% -> +%.0f%%，持续 %.2fs -> %.2fs" % [weapon_name, (before_vulnerability - 1.0) * 100.0, (after_vulnerability - 1.0) * 100.0, before_vulnerability_duration, after_vulnerability_duration],
+			}
+		UPGRADE_DRY_ICE_SLOW:
+			var before_dry_ice_slow_factor := clampf(float(weapon.get("slow_factor", 1.0)), 0.15, 1.0)
+			var before_dry_ice_slow_duration := maxf(0.0, float(weapon.get("slow_duration", 0.0)))
+			var after_dry_ice_slow_factor := maxf(0.3, before_dry_ice_slow_factor - 0.08)
+			var after_dry_ice_slow_duration := minf(4.0, before_dry_ice_slow_duration + 0.35)
+			if is_equal_approx(before_dry_ice_slow_factor, after_dry_ice_slow_factor) and is_equal_approx(before_dry_ice_slow_duration, after_dry_ice_slow_duration):
+				return {}
+			return {
+				"type": OPTION_WEAPON_UPGRADE,
+				"weapon_id": weapon_id,
+				"upgrade_type": UPGRADE_DRY_ICE_SLOW,
+				"option_key": "%s:%s" % [weapon_id, String(UPGRADE_DRY_ICE_SLOW)],
+				"label": "%s · 霜冻迟缓\n减速系数 %.2f -> %.2f，时长 %.2fs -> %.2fs" % [weapon_name, before_dry_ice_slow_factor, after_dry_ice_slow_factor, before_dry_ice_slow_duration, after_dry_ice_slow_duration],
+			}
 	return {}
 
 func _close_upgrade_panel() -> void:
@@ -2676,6 +2873,8 @@ func _apply_weapon_upgrade(weapon_id: String, upgrade_type: StringName) -> void:
 			var max_count := 4 if weapon_id == "thermobaric" else 8
 			if weapon_id == "shock_bomb":
 				max_count = 5
+			if weapon_id == "dry_ice":
+				max_count = 6
 			weapon.projectile_count = min(max_count, int(weapon.projectile_count) + 1)
 		UPGRADE_HIT_RADIUS:
 			weapon.hit_radius = minf(54.0, float(weapon.hit_radius) + 3.0)
@@ -2728,6 +2927,14 @@ func _apply_weapon_upgrade(weapon_id: String, upgrade_type: StringName) -> void:
 			weapon.slow_factor = maxf(0.35, float(weapon.get("slow_factor", 1.0)) - 0.08)
 			weapon.slow_duration = minf(3.2, float(weapon.get("slow_duration", 0.0)) + 0.35)
 			weapon.field_duration = minf(6.0, float(weapon.get("field_duration", 0.0)) + 0.45)
+		UPGRADE_DRY_ICE_STUN_DURATION:
+			weapon.stun_duration = minf(2.6, float(weapon.get("stun_duration", 0.0)) + 0.24)
+		UPGRADE_DRY_ICE_VULNERABILITY:
+			weapon.vulnerability_multiplier = minf(1.85, maxf(1.0, float(weapon.get("vulnerability_multiplier", 1.0))) + 0.12)
+			weapon.vulnerability_duration = minf(5.0, float(weapon.get("vulnerability_duration", 0.0)) + 0.45)
+		UPGRADE_DRY_ICE_SLOW:
+			weapon.slow_factor = maxf(0.3, float(weapon.get("slow_factor", 1.0)) - 0.08)
+			weapon.slow_duration = minf(4.0, float(weapon.get("slow_duration", 0.0)) + 0.35)
 
 func _update_progression_text() -> void:
 	level_label.text = "Level: %d" % _current_level

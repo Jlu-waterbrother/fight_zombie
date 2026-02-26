@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="WeaponEntry" format=3]
+
+[ext_resource type="Script" path="res://game/weapons/scripts/weapon_entry.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+weapon_id = "dry_ice"
+weapon_name = "干冰弹"
+weapon_kind = &"projectile"
+fire_interval = 1.58
+fire_interval_min = 0.62
+projectile_count = 1
+spread_degrees = 1.5
+hit_radius = 23.0
+damage = 66.0
+projectile_penetration = 0
+infinite_penetration = true
+stun_duration = 0.45
+slow_factor = 0.86
+slow_duration = 1.0
+vulnerability_multiplier = 1.18
+vulnerability_duration = 1.8

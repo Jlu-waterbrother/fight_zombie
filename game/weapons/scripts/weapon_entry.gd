@@ -11,6 +11,7 @@ class_name WeaponEntry
 @export var hit_radius := 18.0
 @export var damage := 20.0
 @export var projectile_penetration := 0
+@export var infinite_penetration := false
 @export var explosion_radius := 0.0
 @export var explosion_damage_ratio := 0.0
 @export var knockback_distance := 0.0
@@ -20,6 +21,8 @@ class_name WeaponEntry
 @export var stun_duration := 0.0
 @export var slow_factor := 1.0
 @export var slow_duration := 0.0
+@export var vulnerability_multiplier := 1.0
+@export var vulnerability_duration := 0.0
 @export var field_duration := 0.0
 @export var field_tick_interval := 0.25
 @export var field_radius := 0.0

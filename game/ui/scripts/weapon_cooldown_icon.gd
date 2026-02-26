@@ -14,6 +14,7 @@ var _count_label: Label
 
 func _ready() -> void:
 	_ensure_ui_nodes()
+	_recenter_icon_nodes()
 
 func _ensure_ui_nodes() -> void:
 	if _icon_texture_rect != null and _fallback_icon_label != null and _count_label != null:
@@ -27,7 +28,6 @@ func _ensure_ui_nodes() -> void:
 		_icon_texture_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		_icon_texture_rect.custom_minimum_size = icon_size
 		_icon_texture_rect.size = icon_size
-		_icon_texture_rect.position = (custom_minimum_size - icon_size) * 0.5
 		_icon_texture_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(_icon_texture_rect)
 
@@ -36,7 +36,6 @@ func _ensure_ui_nodes() -> void:
 		_fallback_icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_fallback_icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		_fallback_icon_label.size = icon_size
-		_fallback_icon_label.position = (custom_minimum_size - icon_size) * 0.5
 		_fallback_icon_label.add_theme_font_size_override("font_size", 24)
 		_fallback_icon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(_fallback_icon_label)
@@ -54,6 +53,22 @@ func _ensure_ui_nodes() -> void:
 		_count_label.modulate = Color(1.0, 1.0, 1.0, 1.0)
 		_count_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(_count_label)
+
+	_recenter_icon_nodes()
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_RESIZED:
+		_recenter_icon_nodes()
+
+func _recenter_icon_nodes() -> void:
+	if _icon_texture_rect == null or _fallback_icon_label == null:
+		return
+	var center := size * 0.5
+	var half_icon := icon_size * 0.5
+	_icon_texture_rect.size = icon_size
+	_icon_texture_rect.position = center - half_icon
+	_fallback_icon_label.size = icon_size
+	_fallback_icon_label.position = center - half_icon
 
 func configure_icon(icon_texture: Texture2D, fallback_icon: String) -> void:
 	_ensure_ui_nodes()

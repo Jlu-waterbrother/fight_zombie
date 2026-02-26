@@ -1,6 +1,7 @@
 [gd_resource type="SpriteFrames" format=3 uid="uid://bsm203fbdabgg"]
 
 [ext_resource type="Texture2D" uid="uid://dpe58wkwlrso7" path="res://assets/art/sprite/LianZhou_Warrior_06.png" id="1_rf12d"]
+[ext_resource type="Texture2D" uid="uid://b5x578elp56e" path="res://assets/art/sprite/LianZhou_Warrior_14.png" id="2_o240k"]
 
 [resource]
 animations = [{
@@ -30,7 +31,7 @@ animations = [{
 }, {
 "frames": [{
 "duration": 1.0,
-"texture": ExtResource("1_rf12d")
+"texture": ExtResource("2_o240k")
 }],
 "loop": true,
 "name": &"idle",

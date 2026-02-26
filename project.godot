@@ -25,10 +25,16 @@ AudioService="*res://autoload/audio_service.gd"
 
 [display]
 
-window/size/viewport_width=720
-window/size/viewport_height=1280
+window/size/viewport_width=540
+window/size/viewport_height=960
 window/stretch/mode="canvas_items"
 window/handheld/orientation=1
+window/size/window_width=540
+window/size/window_height=960
+
+[gui]
+
+theme/custom_font="uid://bgax8tfmxgmg8"
 
 [physics]
 
@@ -39,3 +45,4 @@ window/handheld/orientation=1
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
+textures/vram_compression/import_etc2_astc=true
